@@ -55,6 +55,7 @@ html[data-theme="dark"] .status.paid{background:#17392b;color:#8ce6b7}html[data-
 /* Botão flutuante para registrar uma nova venda em qualquer tela */
 .fab-sale{position:fixed;right:18px;bottom:88px;z-index:8;width:62px;height:62px;border:0;border-radius:50%;background:#12ad66;color:#fff;box-shadow:0 8px 24px rgba(18,173,102,.38);font-size:23px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:1px;transition:transform .18s,filter .18s}
 .fab-sale span{font-size:19px;margin-top:-18px;margin-left:-5px;background:#fff;color:#0b8c52;width:21px;height:21px;border-radius:50%;display:grid;place-items:center;line-height:1}
+.license-card{border-left:5px solid #7b3fc6}.activation-page{min-height:calc(100vh - 100px);display:grid;place-items:center}.activation-card{width:min(100%,460px);text-align:center;padding:26px}.activation-card .field{text-align:left}.activation-icon{width:66px;height:66px;border-radius:20px;background:#f3eafb;display:grid;place-items:center;font-size:32px;margin:0 auto 14px}.license-message{background:#fff0e3;color:#9b4c0c;border-radius:11px;padding:11px;line-height:1.4}.activation-help{margin:16px 0 0}html[data-theme="dark"] .activation-icon{background:#322342}html[data-theme="dark"] .license-message{background:#432b1b;color:#ffc18f}
 .fab-sale:hover{filter:brightness(.96);transform:translateY(-2px)}
 .fab-sale:active{transform:scale(.96)}
 html[data-theme="dark"] .fab-sale{box-shadow:0 8px 26px rgba(0,0,0,.5)}

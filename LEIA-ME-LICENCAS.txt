@@ -1,0 +1,37 @@
+ANOTAAÍ V22 - IMPLANTAÇÃO DO SISTEMA DE LICENÇAS
+
+IMPORTANTE: siga a ordem abaixo para não bloquear seu próprio acesso.
+
+1. Antes de enviar, edite smilehost-api/config.php e troque o valor de
+   ADMIN_SETUP_KEY por uma frase secreta grande, conhecida somente por você.
+
+2. Na SmileHost, substitua os arquivos da pasta anotaai-api pelos arquivos da
+   nova pasta smilehost-api. Preserve a pasta private-backups existente para
+   não perder os backups já criados.
+
+3. Abra no navegador:
+   https://teste.acaidageh.shop/anotaai-api/admin.php
+
+4. Na primeira configuração, informe a ADMIN_SETUP_KEY e crie sua senha de
+   administrador com pelo menos 10 caracteres.
+
+5. No painel administrativo, crie uma licença para você. Copie a licença assim
+   que ela aparecer, pois depois será mostrado somente o final dela.
+
+6. Somente depois disso publique no GitHub Pages os arquivos da pasta principal
+   do anotaai_v22. Não envie a pasta smilehost-api ao GitHub.
+
+7. Abra https://dlstos12.github.io/anotaai/. O aplicativo solicitará a licença.
+   Cole a licença criada no painel administrativo.
+
+8. Para testar a suspensão, volte ao admin.php e toque em Suspender. Na próxima
+   verificação online, o aplicativo mostrará o acesso suspenso. Reative para
+   liberar novamente.
+
+REGRAS
+- Licença ativa: aplicativo e backup funcionam.
+- Licença suspensa ou vencida: o acesso é bloqueado na verificação online.
+- Falha de internet: uma licença validada continua por até 3 dias.
+- A chave de backup continua separada da licença e permite mesclar aparelhos.
+- O backup.php agora exige uma licença ativa em todas as operações.
+- Não apague private-backups ao atualizar a API.

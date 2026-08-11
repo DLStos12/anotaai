@@ -334,6 +334,7 @@ function mais() {
   const codigoBackup = localStorage.getItem('anotaaiBackupCode') || '';
   const ultimoBackup = localStorage.getItem('anotaaiUltimoBackup');
   const apiConfigurada = backupApiConfigurada();
+  const licenca = localStorage.getItem('anotaaiLicenseCode') || '';
   shell('Mais opções', `<section class="grid"><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Cadastros e cobranças</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos e estoque</span></button><button class="action purple" onclick="configUsuario()"><b>👤 Usuário</b><span>Seu nome e dados PIX</span></button></section>
   <section class="card app-install-card">
     <div class="app-install-info"><div class="app-install-icon">📱</div><div><h3>Aplicativo AnotaAí</h3><p class="muted" id="installAppStatus">${instalado ? 'O AnotaAí já está instalado neste aparelho.' : 'Instale para abrir pela tela inicial e usar como aplicativo.'}</p></div></div>
@@ -350,6 +351,7 @@ function mais() {
     </div>
     <p class="muted backup-status" id="backupStatus">${ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.'}</p>
   </section>
+  <section class="card license-card"><h3>🔑 Licença</h3><p class="muted">${licenca ? `Licença ativa neste aparelho · final ${escapeHtml(licenca.slice(-4))}` : 'Nenhuma licença ativada.'}</p><button class="btn secondary" onclick="trocarLicenca()">Trocar licença</button></section>
   <section class="card"><h3>Dados locais</h3><p class="muted">Os dados também ficam salvos neste aparelho e navegador.</p><button class="btn danger" onclick="abrirLimpeza()">Limpar dados locais</button></section>`, 'mais');
 }
 
@@ -384,7 +386,7 @@ async function chamarApiBackup(action, code, data) {
   const resposta = await fetch(window.ANOTAAI_BACKUP_API, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({action, code, data})
+    body: JSON.stringify({action, code, data, license: localStorage.getItem('anotaaiLicenseCode') || ''})
   });
   let json;
   try { json = await resposta.json(); }
@@ -583,4 +585,12 @@ async function instalarApp() {
 // O Service Worker só funciona corretamente em HTTPS ou localhost.
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
 
-home();
+// --------------------------- LICENÇA ------------------------------
+const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
+function licenseApiConfigurada() { const url=String(window.ANOTAAI_LICENSE_API||'').trim(); return /^https:\/\//i.test(url)&&!url.includes('SEU-DOMINIO'); }
+function telaAtivacao(mensagem='') { const atual=localStorage.getItem('anotaaiLicenseCode')||''; document.querySelector('#app').innerHTML=`<header class="top"><div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>Ativação do aplicativo</p></div></div></header><main class="page activation-page"><section class="card activation-card"><div class="activation-icon">🔑</div><h2>Ative seu AnotaAí</h2><p class="muted">Digite a licença recebida na compra.</p>${mensagem?`<p class="license-message">${escapeHtml(mensagem)}</p>`:''}<div class="field"><label>Chave de licença</label><input id="licenseInput" value="${escapeHtml(atual)}" autocomplete="off" autocapitalize="characters" placeholder="ANOTA-XXXX-XXXX-XXXX-XXXX"></div><button class="btn" onclick="ativarLicenca()">Ativar e continuar</button><p class="muted activation-help">É necessário conectar à internet na primeira ativação.</p></section></main>`; }
+async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
+async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));home();}catch(erro){telaAtivacao(erro.message);} }
+async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return home();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));home();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return home();telaAtivacao(erro.message);} }
+function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
+iniciarComLicenca();
