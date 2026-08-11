@@ -340,6 +340,8 @@ function mais() {
   const licenca = localStorage.getItem('anotaaiLicenseCode') || '';
   const autoSync = localStorage.getItem('anotaaiAutoSync') !== 'false';
   const ultimaSync = localStorage.getItem('anotaaiUltimaSync');
+  const agendaBackup = obterAgendaBackup();
+  const proximoBackup = descreverProximoBackup();
   shell('Mais opções', `<section class="grid"><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Cadastros e cobranças</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos e estoque</span></button><button class="action purple" onclick="configUsuario()"><b>👤 Usuário</b><span>Seu nome e dados PIX</span></button></section>
   <section class="card app-install-card">
     <div class="app-install-info"><div class="app-install-icon">📱</div><div><h3>Aplicativo AnotaAí</h3><p class="muted" id="installAppStatus">${instalado ? 'O AnotaAí já está instalado neste aparelho.' : 'Instale para abrir pela tela inicial e usar como aplicativo.'}</p></div></div>
@@ -356,6 +358,13 @@ function mais() {
       <button class="btn sync-now" onclick="sincronizarAgora()">🔄 Sincronizar agora</button>
     </div>
     <label class="checkline sync-toggle"><input type="checkbox" ${autoSync?'checked':''} onchange="configurarSyncAutomatica(this.checked)"> Sincronização automática</label>
+    <div class="backup-schedule">
+      <div class="backup-schedule-head"><div><h4>⏰ Horários do backup</h4><p class="muted">Escolha até três horários por dia.</p></div><select id="quantidadeBackups" onchange="configurarQuantidadeBackups(this.value)">${[1,2,3].map(n=>`<option value="${n}" ${agendaBackup.length===n?'selected':''}>${n}x por dia</option>`).join('')}</select></div>
+      <div class="backup-time-grid" id="camposHorarioBackup">${agendaBackup.map((hora,i)=>`<div class="field"><label>Backup ${i+1}</label><input type="time" class="backup-time" value="${escapeHtml(hora)}"></div>`).join('')}</div>
+      <button class="btn secondary schedule-save" onclick="salvarAgendaBackup()">Salvar horários</button>
+      <p class="muted schedule-next" id="proximoBackupStatus">${escapeHtml(proximoBackup)}</p>
+      <p class="muted schedule-note">O app executa no horário enquanto estiver aberto. Se estiver fechado, realiza o backup pendente quando for aberto novamente.</p>
+    </div>
     <p class="muted backup-status" id="backupStatus">${ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : (ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.')}</p>
   </section>
   <section class="card license-card"><h3>🔑 Licença</h3><p class="muted">${licenca ? `Licença ativa neste aparelho · final ${escapeHtml(licenca.slice(-4))}` : 'Nenhuma licença ativada.'}</p><button class="btn secondary" onclick="trocarLicenca()">Trocar licença</button></section>
@@ -367,6 +376,9 @@ function mais() {
 // a pequena API PHP instalada separadamente na SmileHost.
 const BACKUP_LISTAS = ['clientes','produtos','vendas','pagamentos','movimentacoesEstoque','cobrancas'];
 let timerBackupOnline = null;
+let timerAgendaBackup = null;
+let backupAgendadoEmAndamento = false;
+let eventosAgendaConfigurados = false;
 
 function backupApiConfigurada() {
   const url = String(window.ANOTAAI_BACKUP_API || '').trim();
@@ -382,7 +394,7 @@ function gerarCodigoBackup() {
 function pacoteBackup() {
   return {
     app: 'AnotaAí',
-    versao: 24,
+    versao: 25,
     criadoEm: new Date().toISOString(),
     dados: JSON.parse(JSON.stringify(db))
   };
@@ -495,6 +507,79 @@ function mesclarBackup(pacote) {
 function registroTempo(item){return new Date(item?.atualizadoEm||item?.editadoEm||item?.data||0).getTime()||0;}
 
 function configurarSyncAutomatica(ativa){localStorage.setItem('anotaaiAutoSync',ativa?'true':'false');if(ativa)sincronizarAgora(true);}
+
+function obterAgendaBackup(){
+  try {
+    const agenda=JSON.parse(localStorage.getItem('anotaaiBackupHorarios'));
+    if(Array.isArray(agenda)&&agenda.length)return agenda.filter(h=>/^([01]\d|2[0-3]):[0-5]\d$/.test(h)).slice(0,3);
+  } catch {}
+  return ['09:00'];
+}
+
+function configurarQuantidadeBackups(quantidade){
+  const total=Math.max(1,Math.min(3,Number(quantidade)||1));
+  const atuais=[...document.querySelectorAll('.backup-time')].map(input=>input.value);
+  const padrao=['09:00','14:00','20:00'];
+  const container=document.getElementById('camposHorarioBackup');
+  if(container)container.innerHTML=Array.from({length:total},(_,i)=>`<div class="field"><label>Backup ${i+1}</label><input type="time" class="backup-time" value="${escapeHtml(atuais[i]||padrao[i])}"></div>`).join('');
+}
+
+function salvarAgendaBackup(){
+  const horarios=[...document.querySelectorAll('.backup-time')].map(input=>input.value).filter(Boolean);
+  if(!horarios.length)return alert('Escolha pelo menos um horário.');
+  if(new Set(horarios).size!==horarios.length)return alert('Escolha horários diferentes para cada backup.');
+  horarios.sort();
+  localStorage.setItem('anotaaiBackupHorarios',JSON.stringify(horarios));
+  iniciarAgendamentoBackups();
+  alert('Horários de backup salvos!');
+  mais();
+}
+
+function chaveDataLocal(data=new Date()){
+  const y=data.getFullYear(),m=String(data.getMonth()+1).padStart(2,'0'),d=String(data.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+function descreverProximoBackup(){
+  const agora=new Date(),horarios=obterAgendaBackup();
+  const hoje=horarios.find(h=>{const [hora,minuto]=h.split(':').map(Number);const alvo=new Date(agora);alvo.setHours(hora,minuto,0,0);return alvo>agora;});
+  return hoje?`Próximo backup hoje às ${hoje}.`:`Próximo backup amanhã às ${horarios[0]}.`;
+}
+
+function marcarHorariosVencidosExecutados(){
+  const agora=new Date(),data=chaveDataLocal(agora),executados=JSON.parse(localStorage.getItem('anotaaiBackupsExecutados')||'{}');
+  obterAgendaBackup().forEach(h=>{const [hora,minuto]=h.split(':').map(Number);const alvo=new Date(agora);alvo.setHours(hora,minuto,0,0);if(agora>=alvo)executados[`${data}|${h}`]=new Date().toISOString();});
+  localStorage.setItem('anotaaiBackupsExecutados',JSON.stringify(executados));
+}
+
+async function verificarBackupsAgendados(){
+  if(backupAgendadoEmAndamento||localStorage.getItem('anotaaiAutoSync')==='false'||!navigator.onLine||!backupApiConfigurada()||!localStorage.getItem('anotaaiBackupCode'))return;
+  const agora=new Date(),data=chaveDataLocal(agora),horarios=obterAgendaBackup();
+  const executados=JSON.parse(localStorage.getItem('anotaaiBackupsExecutados')||'{}');
+  const vencidos=horarios.filter(h=>{const [hora,minuto]=h.split(':').map(Number);const alvo=new Date(agora);alvo.setHours(hora,minuto,0,0);return agora>=alvo&&!executados[`${data}|${h}`];});
+  if(!vencidos.length)return;
+  backupAgendadoEmAndamento=true;
+  const funcionou=await sincronizarAgora(true);
+  if(funcionou){
+    vencidos.forEach(h=>executados[`${data}|${h}`]=new Date().toISOString());
+    const limite=new Date();limite.setDate(limite.getDate()-7);
+    Object.keys(executados).forEach(chave=>{if(chave.slice(0,10)<chaveDataLocal(limite))delete executados[chave];});
+    localStorage.setItem('anotaaiBackupsExecutados',JSON.stringify(executados));
+    const status=document.getElementById('proximoBackupStatus');if(status)status.textContent=descreverProximoBackup();
+  }
+  backupAgendadoEmAndamento=false;
+}
+
+function iniciarAgendamentoBackups(){
+  clearInterval(timerAgendaBackup);
+  verificarBackupsAgendados();
+  timerAgendaBackup=setInterval(verificarBackupsAgendados,30000);
+  if(!eventosAgendaConfigurados){
+    window.addEventListener('online',verificarBackupsAgendados);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')verificarBackupsAgendados();});
+    eventosAgendaConfigurados=true;
+  }
+}
 
 async function sincronizarAgora(silencioso=false){
   const code=localStorage.getItem('anotaaiBackupCode');
@@ -617,7 +702,7 @@ const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
 function licenseApiConfigurada() { const url=String(window.ANOTAAI_LICENSE_API||'').trim(); return /^https:\/\//i.test(url)&&!url.includes('SEU-DOMINIO'); }
 function telaAtivacao(mensagem='') { const atual=localStorage.getItem('anotaaiLicenseCode')||''; document.querySelector('#app').innerHTML=`<header class="top"><div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>Ativação do aplicativo</p></div></div></header><main class="page activation-page"><section class="card activation-card"><div class="activation-icon">🔑</div><h2>Ative seu AnotaAí</h2><p class="muted">Digite a licença recebida na compra.</p>${mensagem?`<p class="license-message">${escapeHtml(mensagem)}</p>`:''}<div class="field"><label>Chave de licença</label><input id="licenseInput" value="${escapeHtml(atual)}" autocomplete="off" autocapitalize="characters" placeholder="ANOTA-XXXX-XXXX-XXXX-XXXX"></div><button class="btn" onclick="ativarLicenca()">Ativar e continuar</button><p class="muted activation-help">É necessário conectar à internet na primeira ativação.</p></section></main>`; }
 async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
-async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode'))await sincronizarAgora(true);home();}
+async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
 async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
