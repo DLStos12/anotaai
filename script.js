@@ -1,0 +1,586 @@
+/* ================================================================
+   AnotaAí - Front-end local
+   ----------------------------------------------------------------
+   Este protótipo usa localStorage. Não há backend nem backup nesta
+   versão. O código está dividido em blocos para facilitar o estudo.
+   ================================================================ */
+
+// -------------------------- TEMA ---------------------------------
+const savedTheme = localStorage.getItem('cvtheme') || 'light';
+document.documentElement.dataset.theme = savedTheme;
+function toggleTheme(dark) {
+  const theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('cvtheme', theme);
+}
+
+// ----------------------- BANCO LOCAL ------------------------------
+// Sempre iniciamos com listas vazias. Nada de clientes de exemplo.
+const emptyDB = () => ({
+  clientes: [], produtos: [], vendas: [], pagamentos: [],
+  movimentacoesEstoque: [], cobrancas: [],
+  config: { usuarioNome: '', pixChave: '', pixNome: '', incluirPix: true }
+});
+let db;
+try { db = JSON.parse(localStorage.getItem('cvdb')) || emptyDB(); }
+catch { db = emptyDB(); }
+// Compatibilidade com versões antigas do projeto.
+db.clientes ||= []; db.produtos ||= []; db.vendas ||= []; db.pagamentos ||= [];
+db.movimentacoesEstoque ||= []; db.cobrancas ||= [];
+db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true };
+// Garante os novos campos sem apagar configurações salvas em versões anteriores.
+db.config.usuarioNome ??= '';
+db.config.pixChave ??= '';
+db.config.pixNome ??= '';
+db.config.incluirPix ??= true;
+function save() {
+  localStorage.setItem('cvdb', JSON.stringify(db));
+  agendarBackupOnline();
+}
+
+// ------------------------- UTILIDADES -----------------------------
+const money = value => Number(value || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+const dt = value => new Date(value).toLocaleString('pt-BR');
+const cliente = id => db.clientes.find(c => c.id == id) || {nome:'Cliente removido'};
+const produto = id => db.produtos.find(p => p.id == id) || {nome:'Produto removido', preco:0};
+const hojeISO = () => new Date().toISOString().slice(0,10);
+function escapeHtml(text='') { return String(text).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+
+function totalVendasCliente(id) { return db.vendas.filter(v => v.clienteId == id).reduce((s,v) => s + v.total, 0); }
+function totalPagamentosCliente(id) { return db.pagamentos.filter(p => p.clienteId == id).reduce((s,p) => s + p.valor, 0); }
+function saldoCliente(id) { return Math.max(0, totalVendasCliente(id) - totalPagamentosCliente(id)); }
+function totalAberto() { return db.clientes.reduce((s,c) => s + saldoCliente(c.id), 0); }
+
+// ----------------------- COBRANÇAS / AVISOS -----------------------
+// Retorna clientes cuja DATA E HORA de cobrança já chegaram.
+// Também verifica se essa cobrança já foi marcada como enviada depois do horário agendado.
+function clientesParaCobrarHoje() {
+  const agora = new Date();
+  return db.clientes.filter(c => {
+    if (!c.cobrancaAtiva || !c.dataHoraCobranca || saldoCliente(c.id) <= 0) return false;
+    const agendada = new Date(c.dataHoraCobranca);
+    if (Number.isNaN(agendada.getTime()) || agendada > agora) return false;
+    const ultima = db.cobrancas.filter(x => x.clienteId == c.id).sort((a,b)=>new Date(b.data)-new Date(a.data))[0];
+    return !ultima || new Date(ultima.data) < agendada;
+  });
+}
+
+// Formata o agendamento para aparecer de forma amigável na interface.
+function formatarCobranca(c) {
+  if (!c.dataHoraCobranca) return 'Sem cobrança agendada';
+  return new Date(c.dataHoraCobranca).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+function produtosEstoqueBaixo() {
+  return db.produtos.filter(p => p.controlarEstoque && Number(p.estoque) <= Number(p.estoqueMinimo || 0));
+}
+function notificacoesCount() { return clientesParaCobrarHoje().length + produtosEstoqueBaixo().length; }
+
+// ------------------------- ESTRUTURA ------------------------------
+function shell(title, content, active='inicio') {
+  const avisos = notificacoesCount();
+  document.querySelector('#app').innerHTML = `
+    <header class="top">
+      <div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>${title}</p></div></div>
+      <div class="top-actions">
+        <button class="bell" onclick="abrirNotificacoes()" title="Notificações">🔔${avisos ? `<span>${avisos}</span>` : ''}</button>
+        <label class="theme-toggle" title="Alternar modo claro/escuro"><input type="checkbox" ${document.documentElement.dataset.theme==='dark'?'checked':''} onchange="toggleTheme(this.checked)"><span class="theme-slider"><span>☀️</span><span>🌙</span></span></label>
+      </div>
+    </header>
+    <main class="page">${content}</main>
+    <nav class="nav"><button class="${active==='inicio'?'active':''}" onclick="home()">⌂<br>Início</button><button class="${active==='vendas'?'active':''}" onclick="vendas()">🛒<br>Vendas</button><button class="${active==='relatorios'?'active':''}" onclick="relatorios()">▥<br>Relatórios</button><button class="${active==='mais'?'active':''}" onclick="mais()">•••<br>Mais</button></nav><button class="fab-sale" onclick="novaVenda()" title="Nova venda" aria-label="Nova venda">🛒<span>+</span></button>`;
+}
+
+// --------------------------- HOME ---------------------------------
+function home() {
+  const hoje = new Date().toDateString();
+  const vendasHoje = db.vendas.filter(v => new Date(v.data).toDateString() === hoje).reduce((s,v) => s + v.total, 0);
+  const cobrancas = clientesParaCobrarHoje();
+  const estoque = produtosEstoqueBaixo();
+  shell(db.config.usuarioNome ? `Olá, ${escapeHtml(db.config.usuarioNome)}!` : 'Visão geral', `
+    ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Abra a central para iniciar as cobranças.</p></div><button class="btn" onclick="abrirNotificacoes()">Ver cobranças</button></section>` : ''}
+    <section class="card"><div class="toolbar"><h2>Resumo geral</h2><span class="muted">${new Date().toLocaleDateString('pt-BR')}</span></div><div class="summary"><div>Total em aberto<strong>${money(totalAberto())}</strong></div><div>Vendas hoje<strong>${money(vendasHoje)}</strong></div><div>Clientes<strong>${db.clientes.length}</strong></div></div></section>
+    <section class="grid"><button class="action green" onclick="novaVenda()"><b>🛒 Nova Venda</b><span>Registrar compra de um cliente</span></button><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Clientes, cobranças e pagamentos</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos, estoque e reposição</span></button><button class="action yellow" onclick="relatorios()"><b>📊 Relatórios</b><span>Consultar vendas por período</span></button></section>
+    ${estoque.length ? `<section class="card"><h3>⚠️ Estoque baixo</h3><div class="list">${estoque.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')}</div></section>`:''}
+    <section class="card"><h3>Vendas recentes</h3><div class="list">${db.vendas.slice(-5).reverse().map(v=>`<div class="item"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)}</div></div><span class="price">${money(v.total)}</span></div>`).join('')||'<div class="empty">Nenhuma venda registrada.</div>'}</div></section>
+    <footer class="home-footer">Criado e desenvolvido por Derick Luiz</footer>`, 'inicio');
+  // Popup somente uma vez por dia ao abrir, se houver cobranças.
+  const key = 'cvPopupCobranca';
+  const assinatura = cobrancas.map(c => c.id + ':' + c.dataHoraCobranca).sort().join('|');
+  if (cobrancas.length && localStorage.getItem(key) !== assinatura) { localStorage.setItem(key, assinatura); setTimeout(abrirNotificacoes, 150); }
+  if (!cobrancas.length) localStorage.removeItem(key);
+}
+
+function abrirNotificacoes() {
+  const cs = clientesParaCobrarHoje(), es = produtosEstoqueBaixo();
+  const modal = document.createElement('div'); modal.className='modal-backdrop'; modal.id='modalAvisos';
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>🔔 Notificações</h3><p class="muted">Pendências de hoje</p></div><button class="modal-close" onclick="fecharModal('modalAvisos')">×</button></div>
+    <h4>💰 Cobranças</h4><div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
+    <h4>📦 Estoque baixo</h4><div class="list">${es.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')||'<div class="empty">Nenhum alerta de estoque.</div>'}</div></div>`;
+  document.body.appendChild(modal);
+}
+function fecharModal(id) { document.getElementById(id)?.remove(); }
+
+// -------------------------- CLIENTES -------------------------------
+// Define as tags exibidas abaixo do cliente.
+// Regra combinada para deixar a lista simples:
+// 1) Antes do vencimento não mostramos tag de atraso.
+// 2) Depois do vencimento, quem ainda tem saldo recebe "Em aberto".
+// 3) A segunda tag informa se a mensagem dessa cobrança já foi marcada como enviada.
+// 4) Quando o saldo chega a zero, mostramos somente a data do pagamento.
+function statusCliente(c) {
+  const saldo = saldoCliente(c.id);
+  const teveCompras = totalVendasCliente(c.id) > 0;
+
+  // Pagamentos mais recentes primeiro. Usamos o último para informar a data da quitação.
+  const pagamentos = db.pagamentos
+    .filter(p => p.clienteId == c.id)
+    .sort((a,b) => new Date(b.data) - new Date(a.data));
+
+  // Se já houve compras e não existe mais saldo, a única tag é "Pago em DD/MM/AAAA".
+  if (saldo === 0 && teveCompras) {
+    const ultimoPagamento = pagamentos[0];
+    const dataPago = ultimoPagamento
+      ? new Date(ultimoPagamento.data).toLocaleDateString('pt-BR')
+      : new Date().toLocaleDateString('pt-BR');
+    return `<span class="status paid">✓ Pago em ${dataPago}</span>`;
+  }
+
+  if (!teveCompras) return '<span class="muted">Sem movimentações</span>';
+
+  // As tags de cobrança só aparecem quando a data E a hora programadas já chegaram.
+  if (!c.cobrancaAtiva || !c.dataHoraCobranca) return '';
+  const vencimento = new Date(c.dataHoraCobranca);
+  if (Number.isNaN(vencimento.getTime()) || vencimento > new Date()) return '';
+
+  // Uma mensagem conta como enviada para ESTE vencimento somente se o registro
+  // da cobrança tiver sido criado depois da data/hora agendada. Isso evita que
+  // uma cobrança antiga seja confundida com a cobrança atual.
+  const mensagemEnviada = db.cobrancas.some(x =>
+    x.clienteId == c.id && new Date(x.data) >= vencimento
+  );
+
+  return `
+    <span class="status open">Em aberto</span>
+    <span class="status ${mensagemEnviada ? 'sent' : 'not-sent'}">
+      ${mensagemEnviada ? '✓ Mensagem enviada' : 'Mensagem não enviada'}
+    </span>`;
+}
+function clientes() {
+  shell('Clientes', `<div class="toolbar"><h2>Clientes</h2><button class="btn" onclick="formCliente()">+ Novo cliente</button></div>
+    <section class="card client-search-card"><div class="field client-search-field"><label>Buscar cliente</label><input id="buscaClientes" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarListaClientes()"></div><label class="checkline"><input id="selecionarDevedores" type="checkbox" onchange="selecionarTodosDevedores(this.checked)"> Selecionar todos com saldo em aberto</label></section>
+    <div id="bulkBar" class="bulk-bar hidden"><b><span id="bulkCount">0</span> selecionado(s)</b><div><button class="btn whatsapp-btn" onclick="cobrarSelecionados()">💬 Cobrar</button> <button class="btn danger" onclick="excluirSelecionados()">🗑 Excluir</button></div></div>
+    <div id="listaClientesCadastro" class="list">${htmlListaClientes(db.clientes)}</div>`, 'mais');
+}
+function htmlListaClientes(lista) {
+  return lista.map(c=>`<div class="client-card"><div class="client-head"><label class="client-select"><input class="cliente-check" type="checkbox" value="${c.id}" onchange="atualizarBulk()"></label><div class="client-info"><b>${escapeHtml(c.nome)}</b><div class="client-observation">${c.observacao?`📝 ${escapeHtml(c.observacao)}`:'<span class="muted">Sem observação</span>'}</div><div class="muted">${escapeHtml(c.telefone||'Sem telefone')} ${c.cobrancaAtiva?`· cobrança ${formatarCobranca(c)}`:''}</div><div>${statusCliente(c)}</div></div><button class="btn secondary" onclick="formCliente(${c.id})">Editar</button></div><div class="client-actions"><button class="btn payment-btn" onclick="registrarPagamento(${c.id})">💰 Pagamento</button><button class="btn whatsapp-btn" onclick="enviarMensagem(${c.id})">💬 Enviar mensagem</button><button class="btn danger" onclick="excluirCliente(${c.id})">🗑 Excluir</button></div></div>`).join('') || '<div class="empty">Nenhum cliente encontrado.</div>';
+}
+function filtrarListaClientes() { const termo=document.querySelector('#buscaClientes').value.trim().toLowerCase(); document.querySelector('#listaClientesCadastro').innerHTML=htmlListaClientes(db.clientes.filter(c=>c.nome.toLowerCase().includes(termo))); atualizarBulk(); }
+function selecionados() { return [...document.querySelectorAll('.cliente-check:checked')].map(x=>Number(x.value)); }
+function atualizarBulk() { const n=selecionados().length, bar=document.querySelector('#bulkBar'); if(!bar)return; bar.classList.toggle('hidden',!n); document.querySelector('#bulkCount').textContent=n; }
+function selecionarTodosDevedores(on) { document.querySelectorAll('.cliente-check').forEach(ch=>ch.checked=on && saldoCliente(Number(ch.value))>0); atualizarBulk(); }
+function cobrarSelecionados() { const ids=selecionados().filter(id=>saldoCliente(id)>0); if(!ids.length)return alert('Selecione clientes com saldo em aberto.'); iniciarFilaCobranca(ids); }
+function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return; if(!confirm(`Excluir ${ids.length} cliente(s)? O histórico financeiro será preservado.`))return; db.clientes=db.clientes.filter(c=>!ids.includes(c.id)); save(); clientes(); }
+function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
+
+function formCliente(id) {
+  const c=db.clientes.find(x=>x.id==id)||{nome:'',telefone:'',observacao:'',cobrancaAtiva:false,dataHoraCobranca:''};
+  shell(id?'Editar cliente':'Cadastrar cliente', `<section class="card"><div class="field"><label>Nome *</label><input id="cnome" value="${escapeHtml(c.nome)}"></div><div class="field"><label>Telefone / WhatsApp</label><input id="ctel" value="${escapeHtml(c.telefone||'')}" placeholder="55999999999" inputmode="numeric"></div><div class="field"><label>Observação</label><textarea id="cobs">${escapeHtml(c.observacao||'')}</textarea></div><label class="checkline"><input id="ccobranca" type="checkbox" ${c.cobrancaAtiva?'checked':''}> Ativar lembrete de cobrança</label><div class="field"><label>Data e hora da cobrança</label><input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca||''}"></div><button class="btn" onclick="salvarCliente(${id||'null'})">Salvar cliente</button></section>`, 'mais');
+}
+function salvarCliente(id) { const nome=cnome.value.trim(), dataHora=cdatahora.value; if(!nome)return alert('Informe o nome.'); if(ccobranca.checked && !dataHora)return alert('Informe a data e a hora da cobrança.'); const dados={nome,telefone:ctel.value.trim(),observacao:cobs.value.trim(),cobrancaAtiva:ccobranca.checked,dataHoraCobranca:ccobranca.checked?dataHora:null}; if(id)Object.assign(db.clientes.find(c=>c.id==id),dados); else db.clientes.push({id:Date.now(),...dados}); save(); clientes(); }
+
+// ------------------------- PAGAMENTOS ------------------------------
+function registrarPagamento(id) { const c=cliente(id); shell('Registrar pagamento', `<section class="card"><h2>${escapeHtml(c.nome)}</h2><p class="muted">Saldo atual</p><h2 class="balance-highlight">${money(saldoCliente(id))}</h2><div class="field"><label>Valor pago *</label><input id="pagvalor" type="number" min="0.01" step="0.01" placeholder="0,00"></div><div class="field"><label>Observação</label><textarea id="pagobs" placeholder="Ex.: Pix, pagamento parcial..."></textarea></div><button class="btn" onclick="salvarPagamento(${id})">Confirmar pagamento</button></section>`, 'mais'); }
+function salvarPagamento(id) { const valor=Number(pagvalor.value); if(!valor||valor<=0)return alert('Informe um valor válido.'); if(valor>saldoCliente(id)&&!confirm('O valor é maior que o saldo atual. Registrar mesmo assim?'))return; db.pagamentos.push({id:Date.now(),clienteId:id,valor,data:new Date().toISOString(),observacao:pagobs.value.trim()}); save(); alert('Pagamento registrado!'); clientes(); }
+
+// ------------------- WHATSAPP / FILA DE COBRANÇA ------------------
+function montarMensagem(id) {
+  const c=cliente(id), compras=db.vendas.filter(v=>v.clienteId==id).sort((a,b)=>new Date(a.data)-new Date(b.data));
+  const detalhes=compras.length?compras.map(v=>{const d=new Date(v.data); const itens=v.itens.map(i=>`${i.quantidade}x ${i.nome} (${money(i.subtotal)})`).join(', '); return `• ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} - ${itens} = ${money(v.total)}`;}).join('\n'):'Nenhuma compra registrada.';
+  let msg=`Olá, ${c.nome}! Tudo bem? Segue o detalhamento das suas compras:\n\n${detalhes}\n\n💰 Total em aberto: ${money(saldoCliente(id))}.`;
+  if(db.config.incluirPix && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
+  return msg;
+}
+// Monta e abre o link do WhatsApp. Retorna false quando não for possível abrir.
+function abrirWhatsApp(id) {
+  const c = cliente(id);
+  if (!c.telefone) {
+    alert('Cadastre o telefone do cliente antes de enviar.');
+    return false;
+  }
+
+  let numero = String(c.telefone).replace(/\D/g, '');
+  if (numero.length <= 11) numero = '55' + numero;
+
+  window.open(`https://wa.me/${numero}?text=${encodeURIComponent(montarMensagem(id))}`, '_blank');
+  return true;
+}
+
+// Registra que a mensagem da cobrança atual foi enviada.
+// O registro fica associado ao vencimento atual: quando o cliente receber uma
+// nova data/hora de cobrança, o sistema voltará a mostrar "Mensagem não enviada".
+function registrarMensagemEnviada(id) {
+  const c = cliente(id);
+  const vencimento = c.dataHoraCobranca ? new Date(c.dataHoraCobranca) : null;
+
+  // Evita criar vários registros se o botão for tocado mais de uma vez para
+  // exatamente a mesma cobrança.
+  const jaRegistrada = vencimento && !Number.isNaN(vencimento.getTime()) && db.cobrancas.some(x =>
+    x.clienteId == id && new Date(x.data) >= vencimento
+  );
+
+  if (!jaRegistrada) {
+    db.cobrancas.push({
+      id: Date.now(),
+      clienteId: id,
+      data: new Date().toISOString(),
+      valor: saldoCliente(id),
+      vencimento: c.dataHoraCobranca || null
+    });
+    save();
+  }
+}
+
+// Ao tocar em "Enviar mensagem", primeiro validamos o telefone e preparamos o
+// WhatsApp. O status é salvo imediatamente no localStorage, sem depender de um
+// confirm() depois que o navegador troca para o WhatsApp.
+function enviarMensagem(id) {
+  if (saldoCliente(id) <= 0) return alert('Este cliente não possui valor em aberto.');
+
+  const c = cliente(id);
+  if (!c.telefone) return alert('Cadastre o telefone do cliente antes de enviar.');
+
+  registrarMensagemEnviada(id);
+  abrirWhatsApp(id);
+
+  // Se a aba do AnotaAí continuar aberta, a tag já é atualizada na hora.
+  // Quando o usuário voltar do WhatsApp, o estado também estará salvo.
+  if (document.querySelector('#listaClientesCadastro')) clientes();
+}
+let filaCobranca=[], filaIndex=0;
+function iniciarFilaCobranca(ids) { filaCobranca=ids; filaIndex=0; mostrarFila(); }
+function mostrarFila() { const id=filaCobranca[filaIndex]; if(!id){alert('Fila de cobranças concluída.');clientes();return;} const c=cliente(id); const modal=document.createElement('div'); modal.id='modalFila'; modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-box"><h3>Cobrança ${filaIndex+1} de ${filaCobranca.length}</h3><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p><button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">Abrir WhatsApp</button> <button class="btn" onclick="confirmarFila(${id})">Marcar enviada e próxima</button><button class="btn secondary" onclick="fecharModal('modalFila')">Fechar</button></div>`; document.body.appendChild(modal); }
+function confirmarFila(id) { db.cobrancas.push({id:Date.now(),clienteId:id,data:new Date().toISOString(),valor:saldoCliente(id)}); save(); fecharModal('modalFila'); filaIndex++; mostrarFila(); }
+
+// --------------------------- PRODUTOS ------------------------------
+function produtos() { shell('Produtos', `<div class="toolbar"><h2>Produtos</h2><button class="btn" onclick="formProduto()">+ Novo produto</button></div><div class="list">${db.produtos.map(p=>`<div class="item product-card"><div><b>${escapeHtml(p.nome)}</b><div class="price">${money(p.preco)}</div>${p.controlarEstoque?`<div class="muted">Estoque: ${p.estoque} · mínimo: ${p.estoqueMinimo}</div>`:'<div class="muted">Estoque não controlado</div>'}</div><div class="product-actions">${p.controlarEstoque?`<button class="btn secondary" onclick="reporEstoque(${p.id})">+ Estoque</button>`:''}<button class="btn secondary" onclick="formProduto(${p.id})">Editar</button></div></div>`).join('')||'<div class="empty">Nenhum produto cadastrado.</div>'}</div>`, 'mais'); }
+function formProduto(id) { const p=db.produtos.find(x=>x.id==id)||{nome:'',preco:'',controlarEstoque:false,estoque:0,estoqueMinimo:0}; shell(id?'Editar produto':'Cadastrar produto', `<section class="card"><div class="field"><label>Produto *</label><input id="pnome" value="${escapeHtml(p.nome)}"></div><div class="field"><label>Preço *</label><input id="ppreco" type="number" step="0.01" value="${p.preco}"></div><label class="checkline"><input id="pcontrola" type="checkbox" ${p.controlarEstoque?'checked':''}> Controlar estoque</label><div class="row"><div class="field"><label>Estoque atual</label><input id="pestoque" type="number" min="0" value="${p.estoque||0}"></div><div class="field"><label>Estoque mínimo</label><input id="pmin" type="number" min="0" value="${p.estoqueMinimo||0}"></div></div><button class="btn" onclick="salvarProduto(${id||'null'})">Salvar produto</button></section>`, 'mais'); }
+function salvarProduto(id) { const nome=pnome.value.trim(), preco=Number(ppreco.value), controlarEstoque=pcontrola.checked, estoque=Number(pestoque.value||0), estoqueMinimo=Number(pmin.value||0); if(!nome||preco<0)return alert('Preencha os dados.'); if(id)Object.assign(db.produtos.find(p=>p.id==id),{nome,preco,controlarEstoque,estoque,estoqueMinimo}); else db.produtos.push({id:Date.now(),nome,preco,controlarEstoque,estoque,estoqueMinimo}); save(); produtos(); }
+function reporEstoque(id) { const p=produto(id), qtd=Number(prompt(`Estoque atual de ${p.nome}: ${p.estoque}\n\nQuantas unidades deseja adicionar?`)); if(!qtd||qtd<=0)return; p.estoque=Number(p.estoque||0)+qtd; db.movimentacoesEstoque.push({id:Date.now(),produtoId:id,tipo:'entrada',quantidade:qtd,data:new Date().toISOString(),motivo:'Reposição'}); save(); produtos(); }
+function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return; p.estoque=Number(p.estoque||0)+(sinal*i.quantidade); db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:new Date().toISOString(),motivo});}); }
+
+// ---------------------------- VENDAS -------------------------------
+function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>${db.produtos.map(p=>`<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · ${p.estoque} un.`:''}</small></span><input class="qtd" data-id="${p.id}" type="number" min="0" value="0" oninput="calcVenda()"><span id="sub${p.id}">${money(0)}</span></div>`).join('')||'<div class="empty">Cadastre produtos primeiro.</div>'}<div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
+function filtrarClientesVenda() { const termo=document.querySelector('#buscaClienteVenda').value.trim().toLowerCase(), lista=document.querySelector('#listaClientesVenda'); if(!termo){lista.innerHTML='';return;} const achados=db.clientes.filter(c=>c.nome.toLowerCase().includes(termo)).slice(0,20); lista.innerHTML=achados.map(c=>`<button class="client-search-option" onclick="selecionarClienteVenda(${c.id})"><b>${escapeHtml(c.nome)}</b><span>${escapeHtml(c.telefone||'')}</span></button>`).join('')||'<div class="client-search-empty">Nenhum cliente encontrado.</div>'; }
+function selecionarClienteVenda(id) { const c=cliente(id); vcliente.value=id; buscaClienteVenda.value=c.nome; listaClientesVenda.innerHTML=''; clienteSelecionadoVenda.innerHTML=`Cliente selecionado: <strong>${escapeHtml(c.nome)}</strong>`; }
+function calcVenda() { let t=0; document.querySelectorAll('.qtd').forEach(i=>{const p=produto(i.dataset.id), s=p.preco*Number(i.value); t+=s; document.querySelector('#sub'+p.id).textContent=money(s);}); vtotal.textContent=money(t); }
+function coletarItensVenda() { const itens=[]; let total=0; let erro=''; document.querySelectorAll('.qtd').forEach(i=>{const q=Number(i.value),p=produto(i.dataset.id); if(q>0){if(p.controlarEstoque && q>Number(p.estoque||0))erro=`Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`; itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco}); total+=q*p.preco;}}); return {itens,total,erro}; }
+function salvarVenda() { if(!vcliente.value)return alert('Selecione o cliente.'); const {itens,total,erro}=coletarItensVenda(); if(erro)return alert(erro); if(!itens.length)return alert('Adicione pelo menos um produto.'); ajustarEstoque(itens,-1,'Venda'); db.vendas.push({id:Date.now(),clienteId:Number(vcliente.value),data:new Date().toISOString(),observacao:vobs.value.trim(),itens,total}); save(); alert('Venda registrada!'); vendas(); }
+function vendas() { shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div><div class="list">${db.vendas.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')}</div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('')||'<div class="empty">Nenhuma venda.</div>'}</div>`, 'vendas'); }
+function editarVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; // devolve apenas para validar disponibilidade durante edição
+  shell('Editar venda', `<section class="card"><div class="notice">Venda de <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong> em ${dt(v.data)}.</div><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" value="${escapeHtml(cliente(v.clienteId).nome)}" oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden" value="${v.clienteId}"><div id="clienteSelecionadoVenda" class="selected-client muted">Cliente selecionado: <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong></div></div><h3>Produtos</h3>${db.produtos.map(p=>{const antigo=v.itens.find(i=>i.produtoId==p.id); const q=antigo?.quantidade||0; return `<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · disponível ${p.estoque+q}`:''}</small></span><input class="qtd" data-id="${p.id}" data-old="${q}" type="number" min="0" value="${q}" oninput="calcVenda()"><span id="sub${p.id}">${money(p.preco*q)}</span></div>`}).join('')}<div class="field"><label>Observação</label><textarea id="vobs">${escapeHtml(v.observacao||'')}</textarea></div><h2>Total: <span id="vtotal">${money(v.total)}</span></h2><button class="btn" onclick="salvarEdicaoVenda(${v.id})">Salvar alterações</button></section>`, 'vendas'); calcVenda(); }
+function salvarEdicaoVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; const itens=[]; let total=0; for(const i of document.querySelectorAll('.qtd')){const q=Number(i.value), old=Number(i.dataset.old||0), p=produto(i.dataset.id); if(p.controlarEstoque && q>Number(p.estoque||0)+old)return alert(`Estoque insuficiente de ${p.nome}.`); if(q>0){itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco});total+=q*p.preco;}} if(!itens.length)return alert('Adicione pelo menos um produto.'); if(!confirm(`Salvar alterações? Novo total: ${money(total)}`))return; ajustarEstoque(v.itens,+1,'Estorno por edição'); ajustarEstoque(itens,-1,'Venda editada'); Object.assign(v,{clienteId:Number(vcliente.value),observacao:vobs.value.trim(),itens,total,editadoEm:new Date().toISOString()}); save(); vendas(); }
+
+// -------------------------- RELATÓRIOS -----------------------------
+function relatorios() { shell('Relatórios', `<section class="card"><div class="row"><div class="field"><label>De</label><input id="rini" type="date"></div><div class="field"><label>Até</label><input id="rfim" type="date"></div></div><div class="field"><label>Cliente</label><select id="rcli"><option value="">Todos</option>${db.clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div><button class="btn" onclick="gerarRelatorio()">Gerar relatório</button></section><div id="resultado"></div>`, 'relatorios'); }
+function gerarRelatorio() { const inicio=rini.value?new Date(rini.value+'T00:00:00'):null, fim=rfim.value?new Date(rfim.value+'T23:59:59'):null, cli=rcli.value; const ok=d=>(!inicio||new Date(d)>=inicio)&&(!fim||new Date(d)<=fim); const vs=db.vendas.filter(v=>ok(v.data)&&(!cli||v.clienteId==cli)), ps=db.pagamentos.filter(p=>ok(p.data)&&(!cli||p.clienteId==cli)); const grupos={}; const grupo=id=>grupos[id]||(grupos[id]={total:0,pago:0,itens:{}}); vs.forEach(v=>{const g=grupo(v.clienteId);g.total+=v.total;v.itens.forEach(i=>g.itens[i.nome]=(g.itens[i.nome]||0)+i.quantidade)}); ps.forEach(p=>grupo(p.clienteId).pago+=p.valor); const tv=vs.reduce((s,v)=>s+v.total,0),tp=ps.reduce((s,p)=>s+p.valor,0); const linhas=Object.entries(grupos).map(([id,g])=>`<tr><td>${escapeHtml(cliente(id).nome)}</td><td>${money(g.total)}</td><td>${money(g.pago)}</td><td>${money(Math.max(0,g.total-g.pago))}</td><td>${Object.entries(g.itens).map(([n,q])=>q+' '+escapeHtml(n)).join(', ')||'-'}</td></tr>`).join(''); let detalhe=''; if(cli){detalhe=`<section class="card"><h3>Detalhamento de ${escapeHtml(cliente(cli).nome)}</h3>${vs.sort((a,b)=>new Date(a.data)-new Date(b.data)).map(v=>`<div class="detail-sale"><div class="toolbar"><div><b>${new Date(v.data).toLocaleDateString('pt-BR')}</b><div class="muted">${new Date(v.data).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div></div><strong>${money(v.total)}</strong></div>${v.itens.map(i=>`<div>${i.quantidade}x ${escapeHtml(i.nome)} — ${money(i.subtotal)}</div>`).join('')}${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div>`).join('')||'<div class="empty">Nenhuma compra.</div>'}<h3>Pagamentos</h3>${ps.map(p=>`<div class="item"><span>${dt(p.data)}</span><b>${money(p.valor)}</b></div>`).join('')||'<div class="empty">Nenhum pagamento.</div>'}</section>`;} resultado.innerHTML=`<section class="card"><div class="toolbar"><h3>Resultado do relatório</h3><button class="btn" onclick="exportarRelatorioPDF()">📄 Exportar PDF</button></div><div class="report-summary"><div><span>Vendido</span><strong>${money(tv)}</strong></div><div><span>Pago</span><strong>${money(tp)}</strong></div><div><span>Em aberto</span><strong>${money(Math.max(0,tv-tp))}</strong></div></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Compras</th><th>Pago</th><th>Em aberto</th><th>Itens</th></tr></thead><tbody>${linhas||'<tr><td colspan="5">Nenhum movimento.</td></tr>'}</tbody></table></div></section>${detalhe}`; }
+
+// ----------------------- EXPORTAÇÃO PARA PDF ----------------------
+// Não usamos uma biblioteca externa aqui. O botão cria uma versão limpa
+// do relatório e abre a impressão do navegador. No Android/Chrome e nos
+// navegadores de desktop, basta escolher "Salvar como PDF".
+function exportarRelatorioPDF() {
+  const conteudo = document.querySelector('#resultado');
+  if (!conteudo || !conteudo.innerText.trim()) {
+    alert('Gere um relatório antes de exportar.');
+    return;
+  }
+
+  const inicio = document.querySelector('#rini')?.value;
+  const fim = document.querySelector('#rfim')?.value;
+  const clienteId = document.querySelector('#rcli')?.value;
+  const nomeCliente = clienteId ? cliente(clienteId).nome : 'Todos os clientes';
+  const formatarData = valor => valor ? new Date(valor + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem limite';
+
+  // Clonamos o relatório para remover apenas os controles que não devem
+  // aparecer no documento final, como o próprio botão Exportar PDF.
+  const clone = conteudo.cloneNode(true);
+  clone.querySelectorAll('button').forEach(botao => botao.remove());
+
+  const janela = window.open('', '_blank');
+  if (!janela) {
+    alert('O navegador bloqueou a janela de impressão. Permita pop-ups para o AnotaAí e tente novamente.');
+    return;
+  }
+
+  janela.document.write(`<!doctype html>
+  <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Relatório AnotaAí</title>
+  <style>
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;margin:0;font-size:12px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #0b2855;padding-bottom:12px;margin-bottom:18px}h1{margin:0;color:#0b2855;font-size:24px}h2,h3{color:#0b2855}.meta{margin-top:5px;color:#596474}.report-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.report-summary div{border:1px solid #dfe5ec;border-radius:8px;padding:10px}.report-summary span{display:block;color:#667085;font-size:11px;margin-bottom:4px}.report-summary strong{font-size:15px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #dfe5ec;padding:7px;text-align:left;vertical-align:top}th{background:#f3f6f9;color:#0b2855}.card{margin-bottom:18px}.toolbar{display:block}.detail-sale{border:1px solid #dfe5ec;border-radius:8px;padding:10px;margin:8px 0;break-inside:avoid}.item{display:flex;justify-content:space-between;border-bottom:1px solid #e8edf2;padding:8px 0}.muted{color:#667085}.empty{color:#667085;padding:10px 0}.table-wrap{overflow:visible}.home-footer,.nav,.fab-sale{display:none!important}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+  <header><div><h1>AnotaAí</h1><div class="meta">Relatório de vendas e pagamentos</div></div><div class="meta">Gerado em ${new Date().toLocaleString('pt-BR')}</div></header>
+  <section class="meta"><b>Período:</b> ${formatarData(inicio)} até ${formatarData(fim)}<br><b>Cliente:</b> ${escapeHtml(nomeCliente)}</section>
+  ${clone.innerHTML}
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
+  </body></html>`);
+  janela.document.close();
+}
+
+
+// ----------------------------- MAIS -------------------------------
+function mais() {
+  const instalado = appEstaInstalado();
+  const codigoBackup = localStorage.getItem('anotaaiBackupCode') || '';
+  const ultimoBackup = localStorage.getItem('anotaaiUltimoBackup');
+  const apiConfigurada = backupApiConfigurada();
+  shell('Mais opções', `<section class="grid"><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Cadastros e cobranças</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos e estoque</span></button><button class="action purple" onclick="configUsuario()"><b>👤 Usuário</b><span>Seu nome e dados PIX</span></button></section>
+  <section class="card app-install-card">
+    <div class="app-install-info"><div class="app-install-icon">📱</div><div><h3>Aplicativo AnotaAí</h3><p class="muted" id="installAppStatus">${instalado ? 'O AnotaAí já está instalado neste aparelho.' : 'Instale para abrir pela tela inicial e usar como aplicativo.'}</p></div></div>
+    <button id="installAppBtn" class="btn install-btn ${instalado ? 'installed' : ''}" onclick="instalarApp()" ${instalado ? 'disabled' : ''}>${instalado ? '✓ Aplicativo instalado' : '⬇ Instalar AnotaAí'}</button>
+  </section>
+  <section class="card backup-card">
+    <div class="toolbar"><div><h3>☁️ Backup online</h3><p class="muted">Salve e recupere os dados em outro aparelho.</p></div><span class="backup-dot ${apiConfigurada ? 'ready' : ''}" title="${apiConfigurada ? 'API configurada' : 'API não configurada'}"></span></div>
+    ${codigoBackup ? `<div class="backup-code"><span>Código de recuperação</span><strong>${escapeHtml(codigoBackup)}</strong><button class="btn secondary" onclick="copiarCodigoBackup()">Copiar código</button></div>` : '<p class="notice">No primeiro backup será criado um código secreto. Guarde-o para restaurar os dados em outro aparelho.</p>'}
+    <div class="backup-actions">
+      <button class="btn" onclick="salvarBackupOnline()">${codigoBackup ? 'Atualizar backup online' : 'Criar backup online'}</button>
+      <button class="btn secondary" onclick="abrirRestauracaoOnline()">Restaurar e mesclar</button>
+      <button class="btn secondary" onclick="exportarBackupArquivo()">Baixar arquivo de backup</button>
+      <label class="btn secondary backup-file-label">Restaurar de arquivo<input type="file" accept="application/json,.json" onchange="restaurarBackupArquivo(this.files[0]);this.value=''" hidden></label>
+    </div>
+    <p class="muted backup-status" id="backupStatus">${ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.'}</p>
+  </section>
+  <section class="card"><h3>Dados locais</h3><p class="muted">Os dados também ficam salvos neste aparelho e navegador.</p><button class="btn danger" onclick="abrirLimpeza()">Limpar dados locais</button></section>`, 'mais');
+}
+
+// -------------------------- BACKUP -------------------------------
+// O GitHub Pages continua hospedando o aplicativo. A URL abaixo aponta para
+// a pequena API PHP instalada separadamente na SmileHost.
+const BACKUP_LISTAS = ['clientes','produtos','vendas','pagamentos','movimentacoesEstoque','cobrancas'];
+let timerBackupOnline = null;
+
+function backupApiConfigurada() {
+  const url = String(window.ANOTAAI_BACKUP_API || '').trim();
+  return /^https:\/\//i.test(url) && !url.includes('SEU-DOMINIO');
+}
+
+function gerarCodigoBackup() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function pacoteBackup() {
+  return {
+    app: 'AnotaAí',
+    versao: 21,
+    criadoEm: new Date().toISOString(),
+    dados: JSON.parse(JSON.stringify(db))
+  };
+}
+
+async function chamarApiBackup(action, code, data) {
+  if (!backupApiConfigurada()) throw new Error('Configure a URL da API no arquivo backup-config.js antes de publicar.');
+  const resposta = await fetch(window.ANOTAAI_BACKUP_API, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action, code, data})
+  });
+  let json;
+  try { json = await resposta.json(); }
+  catch { throw new Error('A hospedagem respondeu em um formato inválido.'); }
+  if (!resposta.ok || !json.ok) throw new Error(json.error || 'Não foi possível acessar o backup.');
+  return json;
+}
+
+async function salvarBackupOnline(silencioso=false) {
+  let code = localStorage.getItem('anotaaiBackupCode');
+  if (!code) code = gerarCodigoBackup();
+  const status = document.getElementById('backupStatus');
+  if (status && !silencioso) status.textContent = 'Salvando backup online...';
+  try {
+    await chamarApiBackup('save', code, pacoteBackup());
+    localStorage.setItem('anotaaiBackupCode', code);
+    localStorage.setItem('anotaaiUltimoBackup', new Date().toISOString());
+    if (!silencioso) {
+      alert(`Backup salvo!\n\nSeu código de recuperação é:\n${code}\n\nGuarde esse código em um lugar seguro.`);
+      mais();
+    }
+  } catch (erro) {
+    if (!silencioso) alert(erro.message);
+    if (status) status.textContent = `Falha no backup: ${erro.message}`;
+  }
+}
+
+function agendarBackupOnline() {
+  if (!backupApiConfigurada() || !localStorage.getItem('anotaaiBackupCode')) return;
+  clearTimeout(timerBackupOnline);
+  timerBackupOnline = setTimeout(() => salvarBackupOnline(true), 1800);
+}
+
+function copiarCodigoBackup() {
+  const code = localStorage.getItem('anotaaiBackupCode');
+  if (!code) return;
+  navigator.clipboard?.writeText(code).then(() => alert('Código copiado!')).catch(() => prompt('Copie seu código:', code));
+}
+
+function abrirRestauracaoOnline() {
+  const salvo = localStorage.getItem('anotaaiBackupCode') || '';
+  const modal = document.createElement('div');
+  modal.id = 'modalRestaurarBackup';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>☁️ Restaurar backup</h3><p class="muted">Os dados serão mesclados, sem apagar os registros locais.</p></div><button class="modal-close" onclick="fecharModal('modalRestaurarBackup')">×</button></div><div class="field"><label>Código de recuperação</label><input id="codigoRestauracao" value="${escapeHtml(salvo)}" autocomplete="off" autocapitalize="characters" placeholder="Cole o código do outro aparelho"></div><button class="btn" onclick="restaurarBackupOnline()">Baixar e mesclar</button></div>`;
+  document.body.appendChild(modal);
+}
+
+async function restaurarBackupOnline() {
+  const code = document.getElementById('codigoRestauracao').value.replace(/\s/g,'').toUpperCase();
+  if (code.length < 32) return alert('Informe um código de recuperação válido.');
+  try {
+    const resposta = await chamarApiBackup('restore', code);
+    const resumo = mesclarBackup(resposta.data);
+    localStorage.setItem('anotaaiBackupCode', code);
+    localStorage.setItem('anotaaiUltimoBackup', new Date().toISOString());
+    save();
+    fecharModal('modalRestaurarBackup');
+    await salvarBackupOnline(true);
+    alert(`Backup restaurado e mesclado!\n\n${resumo.adicionados} registro(s) adicionados.\n${resumo.existentes} registro(s) já existiam.`);
+    home();
+  } catch (erro) { alert(erro.message); }
+}
+
+function validarPacoteBackup(pacote) {
+  if (!pacote || pacote.app !== 'AnotaAí' || !pacote.dados || typeof pacote.dados !== 'object') throw new Error('Este arquivo não é um backup válido do AnotaAí.');
+  BACKUP_LISTAS.forEach(chave => { if (!Array.isArray(pacote.dados[chave] || [])) throw new Error(`A lista ${chave} do backup é inválida.`); });
+  return pacote;
+}
+
+function mesclarBackup(pacote) {
+  validarPacoteBackup(pacote);
+  const remoto = pacote.dados;
+  let adicionados = 0, existentes = 0;
+  const localVazio = BACKUP_LISTAS.every(chave => !(db[chave] || []).length);
+  BACKUP_LISTAS.forEach(chave => {
+    db[chave] ||= [];
+    const ids = new Set(db[chave].map(item => String(item.id)));
+    (remoto[chave] || []).forEach(item => {
+      if (ids.has(String(item.id))) { existentes++; return; }
+      db[chave].push(JSON.parse(JSON.stringify(item)));
+      ids.add(String(item.id));
+      adicionados++;
+    });
+  });
+  if (localVazio && remoto.config) db.config = {...db.config, ...remoto.config};
+  return {adicionados, existentes};
+}
+
+function exportarBackupArquivo() {
+  const blob = new Blob([JSON.stringify(pacoteBackup(), null, 2)], {type:'application/json'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `anotaai-backup-${hojeISO()}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+async function restaurarBackupArquivo(arquivo) {
+  if (!arquivo) return;
+  try {
+    const pacote = JSON.parse(await arquivo.text());
+    const resumo = mesclarBackup(pacote);
+    save();
+    alert(`Arquivo restaurado e mesclado!\n\n${resumo.adicionados} registro(s) adicionados.\n${resumo.existentes} registro(s) já existiam.`);
+    home();
+  } catch (erro) { alert(erro.message || 'Não foi possível ler o arquivo.'); }
+}
+
+// --------------------- CONFIGURAÇÕES DO USUÁRIO ------------------
+// Centraliza o nome exibido na Home e os dados PIX usados nas cobranças.
+function configUsuario() {
+  shell('Usuário', `<section class="card">
+    <h3>👤 Perfil</h3>
+    <div class="field"><label>Nome</label><input id="usuarioNome" value="${escapeHtml(db.config.usuarioNome||'')}" placeholder="Ex.: Derick"></div>
+    <h3>💰 Dados para recebimento</h3>
+    <div class="field"><label>Nome do recebedor PIX</label><input id="pixNome" value="${escapeHtml(db.config.pixNome||'')}" placeholder="Ex.: Derick Luiz"></div>
+    <div class="field"><label>Chave PIX</label><input id="pixChave" value="${escapeHtml(db.config.pixChave||'')}" placeholder="CPF, telefone, e-mail ou chave aleatória"></div>
+    <label class="checkline"><input id="pixIncluir" type="checkbox" ${db.config.incluirPix!==false?'checked':''}> Incluir PIX nas mensagens de cobrança</label>
+    <button class="btn" onclick="salvarUsuario()">Salvar alterações</button>
+  </section>`, 'mais');
+}
+
+function salvarUsuario() {
+  db.config.usuarioNome = usuarioNome.value.trim();
+  db.config.pixNome = pixNome.value.trim();
+  db.config.pixChave = pixChave.value.trim();
+  db.config.incluirPix = pixIncluir.checked;
+  save();
+  alert('Configurações do usuário salvas!');
+  home();
+}
+
+// ------------------------ LIMPEZA LOCAL ----------------------------
+function abrirLimpeza() { const modal=document.createElement('div'); modal.id='modalLimpeza'; modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-box"><div class="toolbar"><div><h3>Limpar dados locais</h3><p class="muted">O que deseja limpar?</p></div><button class="modal-close" onclick="fecharModal('modalLimpeza')">×</button></div><div class="clear-options"><button onclick="limparDados('vendas')"><b>🛒 Vendas</b><span>Vendas, pagamentos e cobranças.</span></button><button onclick="limparDados('clientes')"><b>👥 Clientes</b><span>Somente clientes.</span></button><button onclick="limparDados('relatorios')"><b>📊 Relatórios</b><span>Dados salvos de relatórios.</span></button><button class="clear-all" onclick="limparDados('tudo')"><b>🗑 Tudo</b><span>Todos os dados locais.</span></button></div></div>`; document.body.appendChild(modal); }
+function limparDados(tipo) { if(!confirm('Tem certeza? Essa ação não poderá ser desfeita.'))return; if(tipo==='vendas'){db.vendas=[];db.pagamentos=[];db.cobrancas=[];} else if(tipo==='clientes')db.clientes=[]; else if(tipo==='relatorios')localStorage.removeItem('cvrelatorios'); else if(tipo==='tudo')db=emptyDB(); save(); fecharModal('modalLimpeza'); location.reload(); }
+
+// ----------------------------- PWA --------------------------------
+// Guarda o pedido de instalação enviado pelo navegador até o usuário tocar
+// no botão "Instalar AnotaAí", disponível na aba Mais.
+let pedidoInstalacaoPWA = null;
+
+function appEstaInstalado() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function atualizarBotaoInstalacao() {
+  const botao = document.getElementById('installAppBtn');
+  const status = document.getElementById('installAppStatus');
+  if (!botao || !status) return;
+  if (appEstaInstalado()) {
+    botao.disabled = true;
+    botao.classList.add('installed');
+    botao.textContent = '✓ Aplicativo instalado';
+    status.textContent = 'O AnotaAí já está instalado neste aparelho.';
+  } else if (pedidoInstalacaoPWA) {
+    botao.disabled = false;
+    botao.classList.remove('installed');
+    botao.textContent = '⬇ Instalar AnotaAí';
+    status.textContent = 'Tudo pronto! Toque no botão para instalar.';
+  }
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  pedidoInstalacaoPWA = event;
+  atualizarBotaoInstalacao();
+});
+
+window.addEventListener('appinstalled', () => {
+  pedidoInstalacaoPWA = null;
+  atualizarBotaoInstalacao();
+});
+
+async function instalarApp() {
+  if (appEstaInstalado()) return;
+  if (pedidoInstalacaoPWA) {
+    pedidoInstalacaoPWA.prompt();
+    await pedidoInstalacaoPWA.userChoice;
+    pedidoInstalacaoPWA = null;
+    atualizarBotaoInstalacao();
+    return;
+  }
+
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const texto = ios
+    ? 'No iPhone ou iPad, toque no botão Compartilhar do Safari e escolha “Adicionar à Tela de Início”.'
+    : 'Abra este site pelo Chrome ou Edge, acesse o menu do navegador e escolha “Instalar aplicativo” ou “Adicionar à tela inicial”. A instalação exige que o site esteja publicado com HTTPS.';
+  const modal = document.createElement('div');
+  modal.id = 'modalInstalacao';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>📱 Instalar AnotaAí</h3><p class="muted">Adicionar à tela inicial</p></div><button class="modal-close" onclick="fecharModal('modalInstalacao')">×</button></div><p class="install-help">${texto}</p><button class="btn" onclick="fecharModal('modalInstalacao')">Entendi</button></div>`;
+  document.body.appendChild(modal);
+}
+
+// O Service Worker só funciona corretamente em HTTPS ou localhost.
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
+
+home();

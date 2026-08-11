@@ -1,0 +1,22 @@
+ANOTAAÍ V21 - CONFIGURAÇÃO DO BACKUP ONLINE
+
+O site/PWA pode continuar no GitHub Pages. A pasta smilehost-api deve ser
+enviada para uma hospedagem com PHP, como a SmileHost.
+
+1. Na SmileHost, envie a pasta smilehost-api para o servidor.
+2. Edite smilehost-api/config.php e troque ALLOWED_ORIGIN pelo endereço exato
+   do seu GitHub Pages, por exemplo: https://derickluiz.github.io
+3. Descubra o endereço público do backup.php. Exemplo:
+   https://seudominio.com.br/anotaai-api/backup.php
+4. No projeto do GitHub Pages, abra backup-config.js e coloque esse endereço
+   em window.ANOTAAI_BACKUP_API.
+5. Publique os arquivos do AnotaAí no GitHub Pages.
+6. Abra Mais > Backup online > Criar backup online.
+7. Guarde o código de recuperação. Ele é necessário para restaurar em outro
+   aparelho e não pode ser recuperado sem uma cópia.
+
+O arquivo JSON não fica acessível diretamente. O backup.php usa o código de
+recuperação para encontrar o arquivo, mantém uma cópia anterior e só aceita
+requisições vindas do endereço configurado em ALLOWED_ORIGIN.
+
+O backup manual por arquivo continua disponível e não depende da SmileHost.
