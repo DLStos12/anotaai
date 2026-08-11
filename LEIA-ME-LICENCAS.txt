@@ -1,4 +1,4 @@
-ANOTAAÍ V22 - IMPLANTAÇÃO DO SISTEMA DE LICENÇAS
+ANOTAAÍ V24 - LICENÇAS, BACKUP E SINCRONIZAÇÃO
 
 IMPORTANTE: siga a ordem abaixo para não bloquear seu próprio acesso.
 
@@ -27,6 +27,18 @@ IMPORTANTE: siga a ordem abaixo para não bloquear seu próprio acesso.
 8. Para testar a suspensão, volte ao admin.php e toque em Suspender. Na próxima
    verificação online, o aplicativo mostrará o acesso suspenso. Reative para
    liberar novamente.
+
+PAINEL ADMINISTRATIVO
+- Renovar: escolha uma nova data; a licença também será reativada.
+- Suspender/Reativar: altera o acesso sem apagar a licença.
+- Excluir: remove definitivamente a licença, mas preserva os backups.
+
+SINCRONIZAÇÃO
+- A opção Sincronização automática fica em Mais > Backup online.
+- Ao abrir, o app baixa o backup, mescla versões e envia o resultado.
+- Alterações locais são enviadas automaticamente após alguns segundos.
+- Sincronizar agora força o ciclo completo de download e upload.
+- O app continua funcionando offline; a sincronização fica pendente.
 
 REGRAS
 - Licença ativa: aplicativo e backup funcionam.

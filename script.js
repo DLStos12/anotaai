@@ -27,6 +27,7 @@ catch { db = emptyDB(); }
 // Compatibilidade com versões antigas do projeto.
 db.clientes ||= []; db.produtos ||= []; db.vendas ||= []; db.pagamentos ||= [];
 db.movimentacoesEstoque ||= []; db.cobrancas ||= [];
+db.exclusoes ||= [];
 db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true };
 // Garante os novos campos sem apagar configurações salvas em versões anteriores.
 db.config.usuarioNome ??= '';
@@ -180,18 +181,19 @@ function selecionados() { return [...document.querySelectorAll('.cliente-check:c
 function atualizarBulk() { const n=selecionados().length, bar=document.querySelector('#bulkBar'); if(!bar)return; bar.classList.toggle('hidden',!n); document.querySelector('#bulkCount').textContent=n; }
 function selecionarTodosDevedores(on) { document.querySelectorAll('.cliente-check').forEach(ch=>ch.checked=on && saldoCliente(Number(ch.value))>0); atualizarBulk(); }
 function cobrarSelecionados() { const ids=selecionados().filter(id=>saldoCliente(id)>0); if(!ids.length)return alert('Selecione clientes com saldo em aberto.'); iniciarFilaCobranca(ids); }
-function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return; if(!confirm(`Excluir ${ids.length} cliente(s)? O histórico financeiro será preservado.`))return; db.clientes=db.clientes.filter(c=>!ids.includes(c.id)); save(); clientes(); }
-function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
+function registrarExclusao(tipo,id){db.exclusoes||=[];db.exclusoes=db.exclusoes.filter(x=>!(x.tipo===tipo&&String(x.id)===String(id)));db.exclusoes.push({tipo,id,excluidoEm:new Date().toISOString()});}
+function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return; if(!confirm(`Excluir ${ids.length} cliente(s)? O histórico financeiro será preservado.`))return; ids.forEach(id=>registrarExclusao('clientes',id)); db.clientes=db.clientes.filter(c=>!ids.includes(c.id)); save(); clientes(); }
+function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; registrarExclusao('clientes',id); db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
 
 function formCliente(id) {
   const c=db.clientes.find(x=>x.id==id)||{nome:'',telefone:'',observacao:'',cobrancaAtiva:false,dataHoraCobranca:''};
   shell(id?'Editar cliente':'Cadastrar cliente', `<section class="card"><div class="field"><label>Nome *</label><input id="cnome" value="${escapeHtml(c.nome)}"></div><div class="field"><label>Telefone / WhatsApp</label><input id="ctel" value="${escapeHtml(c.telefone||'')}" placeholder="55999999999" inputmode="numeric"></div><div class="field"><label>Observação</label><textarea id="cobs">${escapeHtml(c.observacao||'')}</textarea></div><label class="checkline"><input id="ccobranca" type="checkbox" ${c.cobrancaAtiva?'checked':''}> Ativar lembrete de cobrança</label><div class="field"><label>Data e hora da cobrança</label><input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca||''}"></div><button class="btn" onclick="salvarCliente(${id||'null'})">Salvar cliente</button></section>`, 'mais');
 }
-function salvarCliente(id) { const nome=cnome.value.trim(), dataHora=cdatahora.value; if(!nome)return alert('Informe o nome.'); if(ccobranca.checked && !dataHora)return alert('Informe a data e a hora da cobrança.'); const dados={nome,telefone:ctel.value.trim(),observacao:cobs.value.trim(),cobrancaAtiva:ccobranca.checked,dataHoraCobranca:ccobranca.checked?dataHora:null}; if(id)Object.assign(db.clientes.find(c=>c.id==id),dados); else db.clientes.push({id:Date.now(),...dados}); save(); clientes(); }
+function salvarCliente(id) { const nome=cnome.value.trim(), dataHora=cdatahora.value, atualizadoEm=new Date().toISOString(); if(!nome)return alert('Informe o nome.'); if(ccobranca.checked && !dataHora)return alert('Informe a data e a hora da cobrança.'); const dados={nome,telefone:ctel.value.trim(),observacao:cobs.value.trim(),cobrancaAtiva:ccobranca.checked,dataHoraCobranca:ccobranca.checked?dataHora:null,atualizadoEm}; if(id)Object.assign(db.clientes.find(c=>c.id==id),dados); else db.clientes.push({id:Date.now(),...dados}); save(); clientes(); }
 
 // ------------------------- PAGAMENTOS ------------------------------
 function registrarPagamento(id) { const c=cliente(id); shell('Registrar pagamento', `<section class="card"><h2>${escapeHtml(c.nome)}</h2><p class="muted">Saldo atual</p><h2 class="balance-highlight">${money(saldoCliente(id))}</h2><div class="field"><label>Valor pago *</label><input id="pagvalor" type="number" min="0.01" step="0.01" placeholder="0,00"></div><div class="field"><label>Observação</label><textarea id="pagobs" placeholder="Ex.: Pix, pagamento parcial..."></textarea></div><button class="btn" onclick="salvarPagamento(${id})">Confirmar pagamento</button></section>`, 'mais'); }
-function salvarPagamento(id) { const valor=Number(pagvalor.value); if(!valor||valor<=0)return alert('Informe um valor válido.'); if(valor>saldoCliente(id)&&!confirm('O valor é maior que o saldo atual. Registrar mesmo assim?'))return; db.pagamentos.push({id:Date.now(),clienteId:id,valor,data:new Date().toISOString(),observacao:pagobs.value.trim()}); save(); alert('Pagamento registrado!'); clientes(); }
+function salvarPagamento(id) { const valor=Number(pagvalor.value),agora=new Date().toISOString(); if(!valor||valor<=0)return alert('Informe um valor válido.'); if(valor>saldoCliente(id)&&!confirm('O valor é maior que o saldo atual. Registrar mesmo assim?'))return; db.pagamentos.push({id:Date.now(),clienteId:id,valor,data:agora,observacao:pagobs.value.trim(),atualizadoEm:agora}); save(); alert('Pagamento registrado!'); clientes(); }
 
 // ------------------- WHATSAPP / FILA DE COBRANÇA ------------------
 function montarMensagem(id) {
@@ -235,7 +237,8 @@ function registrarMensagemEnviada(id) {
       clienteId: id,
       data: new Date().toISOString(),
       valor: saldoCliente(id),
-      vencimento: c.dataHoraCobranca || null
+      vencimento: c.dataHoraCobranca || null,
+      atualizadoEm: new Date().toISOString()
     });
     save();
   }
@@ -260,14 +263,14 @@ function enviarMensagem(id) {
 let filaCobranca=[], filaIndex=0;
 function iniciarFilaCobranca(ids) { filaCobranca=ids; filaIndex=0; mostrarFila(); }
 function mostrarFila() { const id=filaCobranca[filaIndex]; if(!id){alert('Fila de cobranças concluída.');clientes();return;} const c=cliente(id); const modal=document.createElement('div'); modal.id='modalFila'; modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-box"><h3>Cobrança ${filaIndex+1} de ${filaCobranca.length}</h3><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p><button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">Abrir WhatsApp</button> <button class="btn" onclick="confirmarFila(${id})">Marcar enviada e próxima</button><button class="btn secondary" onclick="fecharModal('modalFila')">Fechar</button></div>`; document.body.appendChild(modal); }
-function confirmarFila(id) { db.cobrancas.push({id:Date.now(),clienteId:id,data:new Date().toISOString(),valor:saldoCliente(id)}); save(); fecharModal('modalFila'); filaIndex++; mostrarFila(); }
+function confirmarFila(id) { const agora=new Date().toISOString(); db.cobrancas.push({id:Date.now(),clienteId:id,data:agora,valor:saldoCliente(id),atualizadoEm:agora}); save(); fecharModal('modalFila'); filaIndex++; mostrarFila(); }
 
 // --------------------------- PRODUTOS ------------------------------
 function produtos() { shell('Produtos', `<div class="toolbar"><h2>Produtos</h2><button class="btn" onclick="formProduto()">+ Novo produto</button></div><div class="list">${db.produtos.map(p=>`<div class="item product-card"><div><b>${escapeHtml(p.nome)}</b><div class="price">${money(p.preco)}</div>${p.controlarEstoque?`<div class="muted">Estoque: ${p.estoque} · mínimo: ${p.estoqueMinimo}</div>`:'<div class="muted">Estoque não controlado</div>'}</div><div class="product-actions">${p.controlarEstoque?`<button class="btn secondary" onclick="reporEstoque(${p.id})">+ Estoque</button>`:''}<button class="btn secondary" onclick="formProduto(${p.id})">Editar</button></div></div>`).join('')||'<div class="empty">Nenhum produto cadastrado.</div>'}</div>`, 'mais'); }
 function formProduto(id) { const p=db.produtos.find(x=>x.id==id)||{nome:'',preco:'',controlarEstoque:false,estoque:0,estoqueMinimo:0}; shell(id?'Editar produto':'Cadastrar produto', `<section class="card"><div class="field"><label>Produto *</label><input id="pnome" value="${escapeHtml(p.nome)}"></div><div class="field"><label>Preço *</label><input id="ppreco" type="number" step="0.01" value="${p.preco}"></div><label class="checkline"><input id="pcontrola" type="checkbox" ${p.controlarEstoque?'checked':''}> Controlar estoque</label><div class="row"><div class="field"><label>Estoque atual</label><input id="pestoque" type="number" min="0" value="${p.estoque||0}"></div><div class="field"><label>Estoque mínimo</label><input id="pmin" type="number" min="0" value="${p.estoqueMinimo||0}"></div></div><button class="btn" onclick="salvarProduto(${id||'null'})">Salvar produto</button></section>`, 'mais'); }
-function salvarProduto(id) { const nome=pnome.value.trim(), preco=Number(ppreco.value), controlarEstoque=pcontrola.checked, estoque=Number(pestoque.value||0), estoqueMinimo=Number(pmin.value||0); if(!nome||preco<0)return alert('Preencha os dados.'); if(id)Object.assign(db.produtos.find(p=>p.id==id),{nome,preco,controlarEstoque,estoque,estoqueMinimo}); else db.produtos.push({id:Date.now(),nome,preco,controlarEstoque,estoque,estoqueMinimo}); save(); produtos(); }
-function reporEstoque(id) { const p=produto(id), qtd=Number(prompt(`Estoque atual de ${p.nome}: ${p.estoque}\n\nQuantas unidades deseja adicionar?`)); if(!qtd||qtd<=0)return; p.estoque=Number(p.estoque||0)+qtd; db.movimentacoesEstoque.push({id:Date.now(),produtoId:id,tipo:'entrada',quantidade:qtd,data:new Date().toISOString(),motivo:'Reposição'}); save(); produtos(); }
-function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return; p.estoque=Number(p.estoque||0)+(sinal*i.quantidade); db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:new Date().toISOString(),motivo});}); }
+function salvarProduto(id) { const nome=pnome.value.trim(), preco=Number(ppreco.value), controlarEstoque=pcontrola.checked, estoque=Number(pestoque.value||0), estoqueMinimo=Number(pmin.value||0),atualizadoEm=new Date().toISOString(); if(!nome||preco<0)return alert('Preencha os dados.'); if(id)Object.assign(db.produtos.find(p=>p.id==id),{nome,preco,controlarEstoque,estoque,estoqueMinimo,atualizadoEm}); else db.produtos.push({id:Date.now(),nome,preco,controlarEstoque,estoque,estoqueMinimo,atualizadoEm}); save(); produtos(); }
+function reporEstoque(id) { const p=produto(id), qtd=Number(prompt(`Estoque atual de ${p.nome}: ${p.estoque}\n\nQuantas unidades deseja adicionar?`)); if(!qtd||qtd<=0)return; const agora=new Date().toISOString(); p.estoque=Number(p.estoque||0)+qtd;p.atualizadoEm=agora; db.movimentacoesEstoque.push({id:Date.now(),produtoId:id,tipo:'entrada',quantidade:qtd,data:agora,motivo:'Reposição',atualizadoEm:agora}); save(); produtos(); }
+function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return;const agora=new Date().toISOString(); p.estoque=Number(p.estoque||0)+(sinal*i.quantidade);p.atualizadoEm=agora; db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:agora,motivo,atualizadoEm:agora});}); }
 
 // ---------------------------- VENDAS -------------------------------
 function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>${db.produtos.map(p=>`<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · ${p.estoque} un.`:''}</small></span><input class="qtd" data-id="${p.id}" type="number" min="0" value="0" oninput="calcVenda()"><span id="sub${p.id}">${money(0)}</span></div>`).join('')||'<div class="empty">Cadastre produtos primeiro.</div>'}<div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
@@ -275,11 +278,11 @@ function filtrarClientesVenda() { const termo=document.querySelector('#buscaClie
 function selecionarClienteVenda(id) { const c=cliente(id); vcliente.value=id; buscaClienteVenda.value=c.nome; listaClientesVenda.innerHTML=''; clienteSelecionadoVenda.innerHTML=`Cliente selecionado: <strong>${escapeHtml(c.nome)}</strong>`; }
 function calcVenda() { let t=0; document.querySelectorAll('.qtd').forEach(i=>{const p=produto(i.dataset.id), s=p.preco*Number(i.value); t+=s; document.querySelector('#sub'+p.id).textContent=money(s);}); vtotal.textContent=money(t); }
 function coletarItensVenda() { const itens=[]; let total=0; let erro=''; document.querySelectorAll('.qtd').forEach(i=>{const q=Number(i.value),p=produto(i.dataset.id); if(q>0){if(p.controlarEstoque && q>Number(p.estoque||0))erro=`Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`; itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco}); total+=q*p.preco;}}); return {itens,total,erro}; }
-function salvarVenda() { if(!vcliente.value)return alert('Selecione o cliente.'); const {itens,total,erro}=coletarItensVenda(); if(erro)return alert(erro); if(!itens.length)return alert('Adicione pelo menos um produto.'); ajustarEstoque(itens,-1,'Venda'); db.vendas.push({id:Date.now(),clienteId:Number(vcliente.value),data:new Date().toISOString(),observacao:vobs.value.trim(),itens,total}); save(); alert('Venda registrada!'); vendas(); }
+function salvarVenda() { if(!vcliente.value)return alert('Selecione o cliente.'); const {itens,total,erro}=coletarItensVenda(); if(erro)return alert(erro); if(!itens.length)return alert('Adicione pelo menos um produto.'); ajustarEstoque(itens,-1,'Venda'); const agora=new Date().toISOString(); db.vendas.push({id:Date.now(),clienteId:Number(vcliente.value),data:agora,observacao:vobs.value.trim(),itens,total,atualizadoEm:agora}); save(); alert('Venda registrada!'); vendas(); }
 function vendas() { shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div><div class="list">${db.vendas.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')}</div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('')||'<div class="empty">Nenhuma venda.</div>'}</div>`, 'vendas'); }
 function editarVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; // devolve apenas para validar disponibilidade durante edição
   shell('Editar venda', `<section class="card"><div class="notice">Venda de <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong> em ${dt(v.data)}.</div><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" value="${escapeHtml(cliente(v.clienteId).nome)}" oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden" value="${v.clienteId}"><div id="clienteSelecionadoVenda" class="selected-client muted">Cliente selecionado: <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong></div></div><h3>Produtos</h3>${db.produtos.map(p=>{const antigo=v.itens.find(i=>i.produtoId==p.id); const q=antigo?.quantidade||0; return `<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · disponível ${p.estoque+q}`:''}</small></span><input class="qtd" data-id="${p.id}" data-old="${q}" type="number" min="0" value="${q}" oninput="calcVenda()"><span id="sub${p.id}">${money(p.preco*q)}</span></div>`}).join('')}<div class="field"><label>Observação</label><textarea id="vobs">${escapeHtml(v.observacao||'')}</textarea></div><h2>Total: <span id="vtotal">${money(v.total)}</span></h2><button class="btn" onclick="salvarEdicaoVenda(${v.id})">Salvar alterações</button></section>`, 'vendas'); calcVenda(); }
-function salvarEdicaoVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; const itens=[]; let total=0; for(const i of document.querySelectorAll('.qtd')){const q=Number(i.value), old=Number(i.dataset.old||0), p=produto(i.dataset.id); if(p.controlarEstoque && q>Number(p.estoque||0)+old)return alert(`Estoque insuficiente de ${p.nome}.`); if(q>0){itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco});total+=q*p.preco;}} if(!itens.length)return alert('Adicione pelo menos um produto.'); if(!confirm(`Salvar alterações? Novo total: ${money(total)}`))return; ajustarEstoque(v.itens,+1,'Estorno por edição'); ajustarEstoque(itens,-1,'Venda editada'); Object.assign(v,{clienteId:Number(vcliente.value),observacao:vobs.value.trim(),itens,total,editadoEm:new Date().toISOString()}); save(); vendas(); }
+function salvarEdicaoVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; const itens=[]; let total=0; for(const i of document.querySelectorAll('.qtd')){const q=Number(i.value), old=Number(i.dataset.old||0), p=produto(i.dataset.id); if(p.controlarEstoque && q>Number(p.estoque||0)+old)return alert(`Estoque insuficiente de ${p.nome}.`); if(q>0){itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco});total+=q*p.preco;}} if(!itens.length)return alert('Adicione pelo menos um produto.'); if(!confirm(`Salvar alterações? Novo total: ${money(total)}`))return; ajustarEstoque(v.itens,+1,'Estorno por edição'); ajustarEstoque(itens,-1,'Venda editada'); const agora=new Date().toISOString(); Object.assign(v,{clienteId:Number(vcliente.value),observacao:vobs.value.trim(),itens,total,editadoEm:agora,atualizadoEm:agora}); save(); vendas(); }
 
 // -------------------------- RELATÓRIOS -----------------------------
 function relatorios() { shell('Relatórios', `<section class="card"><div class="row"><div class="field"><label>De</label><input id="rini" type="date"></div><div class="field"><label>Até</label><input id="rfim" type="date"></div></div><div class="field"><label>Cliente</label><select id="rcli"><option value="">Todos</option>${db.clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div><button class="btn" onclick="gerarRelatorio()">Gerar relatório</button></section><div id="resultado"></div>`, 'relatorios'); }
@@ -335,6 +338,8 @@ function mais() {
   const ultimoBackup = localStorage.getItem('anotaaiUltimoBackup');
   const apiConfigurada = backupApiConfigurada();
   const licenca = localStorage.getItem('anotaaiLicenseCode') || '';
+  const autoSync = localStorage.getItem('anotaaiAutoSync') !== 'false';
+  const ultimaSync = localStorage.getItem('anotaaiUltimaSync');
   shell('Mais opções', `<section class="grid"><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Cadastros e cobranças</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos e estoque</span></button><button class="action purple" onclick="configUsuario()"><b>👤 Usuário</b><span>Seu nome e dados PIX</span></button></section>
   <section class="card app-install-card">
     <div class="app-install-info"><div class="app-install-icon">📱</div><div><h3>Aplicativo AnotaAí</h3><p class="muted" id="installAppStatus">${instalado ? 'O AnotaAí já está instalado neste aparelho.' : 'Instale para abrir pela tela inicial e usar como aplicativo.'}</p></div></div>
@@ -348,8 +353,10 @@ function mais() {
       <button class="btn secondary" onclick="abrirRestauracaoOnline()">Restaurar e mesclar</button>
       <button class="btn secondary" onclick="exportarBackupArquivo()">Baixar arquivo de backup</button>
       <label class="btn secondary backup-file-label">Restaurar de arquivo<input type="file" accept="application/json,.json" onchange="restaurarBackupArquivo(this.files[0]);this.value=''" hidden></label>
+      <button class="btn sync-now" onclick="sincronizarAgora()">🔄 Sincronizar agora</button>
     </div>
-    <p class="muted backup-status" id="backupStatus">${ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.'}</p>
+    <label class="checkline sync-toggle"><input type="checkbox" ${autoSync?'checked':''} onchange="configurarSyncAutomatica(this.checked)"> Sincronização automática</label>
+    <p class="muted backup-status" id="backupStatus">${ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : (ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.')}</p>
   </section>
   <section class="card license-card"><h3>🔑 Licença</h3><p class="muted">${licenca ? `Licença ativa neste aparelho · final ${escapeHtml(licenca.slice(-4))}` : 'Nenhuma licença ativada.'}</p><button class="btn secondary" onclick="trocarLicenca()">Trocar licença</button></section>
   <section class="card"><h3>Dados locais</h3><p class="muted">Os dados também ficam salvos neste aparelho e navegador.</p><button class="btn danger" onclick="abrirLimpeza()">Limpar dados locais</button></section>`, 'mais');
@@ -375,7 +382,7 @@ function gerarCodigoBackup() {
 function pacoteBackup() {
   return {
     app: 'AnotaAí',
-    versao: 21,
+    versao: 24,
     criadoEm: new Date().toISOString(),
     dados: JSON.parse(JSON.stringify(db))
   };
@@ -404,18 +411,21 @@ async function salvarBackupOnline(silencioso=false) {
     await chamarApiBackup('save', code, pacoteBackup());
     localStorage.setItem('anotaaiBackupCode', code);
     localStorage.setItem('anotaaiUltimoBackup', new Date().toISOString());
+    localStorage.setItem('anotaaiUltimaSync', new Date().toISOString());
     if (!silencioso) {
       alert(`Backup salvo!\n\nSeu código de recuperação é:\n${code}\n\nGuarde esse código em um lugar seguro.`);
       mais();
     }
+    return true;
   } catch (erro) {
     if (!silencioso) alert(erro.message);
     if (status) status.textContent = `Falha no backup: ${erro.message}`;
+    return false;
   }
 }
 
 function agendarBackupOnline() {
-  if (!backupApiConfigurada() || !localStorage.getItem('anotaaiBackupCode')) return;
+  if (localStorage.getItem('anotaaiAutoSync') === 'false' || !backupApiConfigurada() || !localStorage.getItem('anotaaiBackupCode')) return;
   clearTimeout(timerBackupOnline);
   timerBackupOnline = setTimeout(() => salvarBackupOnline(true), 1800);
 }
@@ -460,20 +470,37 @@ function validarPacoteBackup(pacote) {
 function mesclarBackup(pacote) {
   validarPacoteBackup(pacote);
   const remoto = pacote.dados;
-  let adicionados = 0, existentes = 0;
+  let adicionados = 0, existentes = 0, atualizados = 0, excluidos = 0;
   const localVazio = BACKUP_LISTAS.every(chave => !(db[chave] || []).length);
+  db.exclusoes ||= [];
+  const exclusoesMap = new Map();
+  [...db.exclusoes,...(remoto.exclusoes||[])].forEach(x=>{const k=x.tipo+':'+x.id,atual=exclusoesMap.get(k);if(!atual||new Date(x.excluidoEm)>new Date(atual.excluidoEm))exclusoesMap.set(k,x);});
+  db.exclusoes=[...exclusoesMap.values()];
   BACKUP_LISTAS.forEach(chave => {
     db[chave] ||= [];
-    const ids = new Set(db[chave].map(item => String(item.id)));
+    const indices = new Map(db[chave].map((item,index) => [String(item.id),index]));
     (remoto[chave] || []).forEach(item => {
-      if (ids.has(String(item.id))) { existentes++; return; }
+      const indice=indices.get(String(item.id));
+      if(indice!==undefined){const local=db[chave][indice],tempoRemoto=registroTempo(item),tempoLocal=registroTempo(local);if(tempoRemoto>tempoLocal){db[chave][indice]=JSON.parse(JSON.stringify(item));atualizados++;}else existentes++;return;}
       db[chave].push(JSON.parse(JSON.stringify(item)));
-      ids.add(String(item.id));
+      indices.set(String(item.id),db[chave].length-1);
       adicionados++;
     });
+    db.exclusoes.filter(x=>x.tipo===chave).forEach(x=>{const antes=db[chave].length;db[chave]=db[chave].filter(item=>String(item.id)!==String(x.id)||registroTempo(item)>new Date(x.excluidoEm).getTime());excluidos+=antes-db[chave].length;});
   });
   if (localVazio && remoto.config) db.config = {...db.config, ...remoto.config};
-  return {adicionados, existentes};
+  return {adicionados, existentes, atualizados, excluidos};
+}
+
+function registroTempo(item){return new Date(item?.atualizadoEm||item?.editadoEm||item?.data||0).getTime()||0;}
+
+function configurarSyncAutomatica(ativa){localStorage.setItem('anotaaiAutoSync',ativa?'true':'false');if(ativa)sincronizarAgora(true);}
+
+async function sincronizarAgora(silencioso=false){
+  const code=localStorage.getItem('anotaaiBackupCode');
+  if(!code){if(!silencioso)alert('Crie ou restaure um backup online primeiro.');return false;}
+  const status=document.getElementById('backupStatus');if(status)status.textContent='Sincronizando dados...';
+  try{const resposta=await chamarApiBackup('restore',code);const resumo=mesclarBackup(resposta.data);localStorage.setItem('cvdb',JSON.stringify(db));const enviou=await salvarBackupOnline(true);if(!enviou)throw new Error('Não foi possível enviar os dados mesclados.');localStorage.setItem('anotaaiUltimaSync',new Date().toISOString());if(!silencioso){alert(`Sincronização concluída!\n\n${resumo.adicionados} novo(s), ${resumo.atualizados} atualizado(s) e ${resumo.excluidos} excluído(s).`);mais();}return true;}catch(erro){if(status)status.textContent='Sincronização pendente: '+erro.message;if(!silencioso)alert(erro.message);return false;}
 }
 
 function exportarBackupArquivo() {
@@ -590,7 +617,8 @@ const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
 function licenseApiConfigurada() { const url=String(window.ANOTAAI_LICENSE_API||'').trim(); return /^https:\/\//i.test(url)&&!url.includes('SEU-DOMINIO'); }
 function telaAtivacao(mensagem='') { const atual=localStorage.getItem('anotaaiLicenseCode')||''; document.querySelector('#app').innerHTML=`<header class="top"><div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>Ativação do aplicativo</p></div></div></header><main class="page activation-page"><section class="card activation-card"><div class="activation-icon">🔑</div><h2>Ative seu AnotaAí</h2><p class="muted">Digite a licença recebida na compra.</p>${mensagem?`<p class="license-message">${escapeHtml(mensagem)}</p>`:''}<div class="field"><label>Chave de licença</label><input id="licenseInput" value="${escapeHtml(atual)}" autocomplete="off" autocapitalize="characters" placeholder="ANOTA-XXXX-XXXX-XXXX-XXXX"></div><button class="btn" onclick="ativarLicenca()">Ativar e continuar</button><p class="muted activation-help">É necessário conectar à internet na primeira ativação.</p></section></main>`; }
 async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
-async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));home();}catch(erro){telaAtivacao(erro.message);} }
-async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return home();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));home();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return home();telaAtivacao(erro.message);} }
+async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode'))await sincronizarAgora(true);home();}
+async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
+async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
 iniciarComLicenca();
