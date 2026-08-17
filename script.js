@@ -407,6 +407,10 @@ function produtos() {
                         <button class="btn secondary" onclick="formProduto(${p.id})">
                             Editar
                         </button>
+
+                        <button class="btn danger" onclick="excluirProduto(${p.id})">
+                            🗑 Excluir
+                        </button>
                     </div>
                 </div>
             `).join('') || '<div class="empty">Nenhum produto cadastrado.</div>'}
