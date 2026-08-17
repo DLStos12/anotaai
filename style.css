@@ -4,6 +4,18 @@
 
 .report-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.report-summary div{background:#f6f7f9;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:5px}.report-summary span{font-size:12px;color:#7d8490}.report-summary strong{font-size:16px}.paid-value{color:#18a663}.table-wrap{overflow-x:auto}@media(max-width:520px){.report-summary{grid-template-columns:1fr}.table-wrap table{min-width:650px}}
 
+/* ================================================================
+   RELATÓRIO - EFEITO ZEBRADO POR CLIENTE
+   ================================================================ */
+
+table tbody tr.cliente-par td {
+  background: transparent;
+}
+
+table tbody tr.cliente-impar td {
+  background: rgba(127, 127, 127, 0.08);
+}
+
 /* Detalhamento do relatório individual */
 .detail-sale{padding:14px 0;border-bottom:1px solid var(--border,#e7e9ee)}
 .detail-sale:last-child{border-bottom:0}

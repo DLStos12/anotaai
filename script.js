@@ -1078,7 +1078,18 @@ function exportarRelatorioPDF() {
   <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Relatório AnotaAí</title>
   <style>
-    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;margin:0;font-size:12px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #0b2855;padding-bottom:12px;margin-bottom:18px}h1{margin:0;color:#0b2855;font-size:24px}h2,h3{color:#0b2855}.meta{margin-top:5px;color:#596474}.report-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.report-summary div{border:1px solid #dfe5ec;border-radius:8px;padding:10px}.report-summary span{display:block;color:#667085;font-size:11px;margin-bottom:4px}.report-summary strong{font-size:15px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #dfe5ec;padding:7px;text-align:left;vertical-align:top}th{background:#f3f6f9;color:#0b2855}.card{margin-bottom:18px}.toolbar{display:block}.detail-sale{border:1px solid #dfe5ec;border-radius:8px;padding:10px;margin:8px 0;break-inside:avoid}.item{display:flex;justify-content:space-between;border-bottom:1px solid #e8edf2;padding:8px 0}.muted{color:#667085}.empty{color:#667085;padding:10px 0}.table-wrap{overflow:visible}.home-footer,.nav,.fab-sale{display:none!important}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;margin:0;font-size:12px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #0b2855;padding-bottom:12px;margin-bottom:18px}h1{margin:0;color:#0b2855;font-size:24px}h2,h3{color:#0b2855}.meta{margin-top:5px;color:#596474}.report-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.report-summary div{border:1px solid #dfe5ec;border-radius:8px;padding:10px}.report-summary span{display:block;color:#667085;font-size:11px;margin-bottom:4px}.report-summary strong{font-size:15px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    table tbody tr.cliente-impar td{
+    background:#f5f7fa;}
+    table tbody tr.cliente-par td{
+    background:#fff;}
+    th,td{border:1px solid #dfe5ec;
+    padding:7px;
+    text-align:left;
+    vertical-align:top}
+    th{background:#f3f6f9;
+    color:#0b2855}.card{margin-bottom:18px}.toolbar{display:block}.detail-sale{border:1px solid #dfe5ec;border-radius:8px;padding:10px;margin:8px 0;break-inside:avoid}.item{display:flex;justify-content:space-between;border-bottom:1px solid #e8edf2;padding:8px 0}.muted{color:#667085}.empty{color:#667085;padding:10px 0}.table-wrap{overflow:visible}.home-footer,.nav,.fab-sale{display:none!important}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
   <header><div><h1>AnotaAí</h1><div class="meta">Relatório de vendas e pagamentos</div></div><div class="meta">Gerado em ${new Date().toLocaleString('pt-BR')}</div></header>
   <section class="meta"><b>Período:</b> ${formatarData(inicio)} até ${formatarData(fim)}<br><b>Cliente:</b> ${escapeHtml(nomeCliente)}</section>
