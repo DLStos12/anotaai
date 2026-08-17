@@ -619,6 +619,9 @@ function configUsuario() {
     <div class="field"><label>Nome do recebedor PIX</label><input id="pixNome" value="${escapeHtml(db.config.pixNome||'')}" placeholder="Ex.: Derick Luiz"></div>
     <div class="field"><label>Chave PIX</label><input id="pixChave" value="${escapeHtml(db.config.pixChave||'')}" placeholder="CPF, telefone, e-mail ou chave aleatória"></div>
     <label class="checkline"><input id="pixIncluir" type="checkbox" ${db.config.incluirPix!==false?'checked':''}> Incluir PIX nas mensagens de cobrança</label>
+    <h3>☁️ Chave do backup</h3>
+    <div class="field"><label>Código de recuperação</label><input id="backupCodeUsuario" value="${escapeHtml(localStorage.getItem('anotaaiBackupCode')||'')}" autocomplete="off" placeholder="Cole aqui o código de 48 caracteres"></div>
+    <p class="muted">Use uma chave já existente para acessar o backup correspondente. Se deixar em branco, a chave deste aparelho será removida.</p>
     <button class="btn" onclick="salvarUsuario()">Salvar alterações</button>
   </section>`, 'mais');
 }
@@ -628,6 +631,10 @@ function salvarUsuario() {
   db.config.pixNome = pixNome.value.trim();
   db.config.pixChave = pixChave.value.trim();
   db.config.incluirPix = pixIncluir.checked;
+  const novaChaveBackup = backupCodeUsuario.value.trim().replace(/\s+/g,'').toUpperCase();
+  if(novaChaveBackup && !/^[A-F0-9]{48}$/.test(novaChaveBackup)) return alert('A chave de backup deve ter 48 caracteres hexadecimais.');
+  if(novaChaveBackup) localStorage.setItem('anotaaiBackupCode',novaChaveBackup);
+  else localStorage.removeItem('anotaaiBackupCode');
   save();
   alert('Configurações do usuário salvas!');
   home();
@@ -635,7 +642,34 @@ function salvarUsuario() {
 
 // ------------------------ LIMPEZA LOCAL ----------------------------
 function abrirLimpeza() { const modal=document.createElement('div'); modal.id='modalLimpeza'; modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-box"><div class="toolbar"><div><h3>Limpar dados locais</h3><p class="muted">O que deseja limpar?</p></div><button class="modal-close" onclick="fecharModal('modalLimpeza')">×</button></div><div class="clear-options"><button onclick="limparDados('vendas')"><b>🛒 Vendas</b><span>Vendas, pagamentos e cobranças.</span></button><button onclick="limparDados('clientes')"><b>👥 Clientes</b><span>Somente clientes.</span></button><button onclick="limparDados('relatorios')"><b>📊 Relatórios</b><span>Dados salvos de relatórios.</span></button><button class="clear-all" onclick="limparDados('tudo')"><b>🗑 Tudo</b><span>Todos os dados locais.</span></button></div></div>`; document.body.appendChild(modal); }
-function limparDados(tipo) { if(!confirm('Tem certeza? Essa ação não poderá ser desfeita.'))return; if(tipo==='vendas'){db.vendas=[];db.pagamentos=[];db.cobrancas=[];} else if(tipo==='clientes')db.clientes=[]; else if(tipo==='relatorios')localStorage.removeItem('cvrelatorios'); else if(tipo==='tudo')db=emptyDB(); save(); fecharModal('modalLimpeza'); location.reload(); }
+async function limparDados(tipo) {
+  if(!confirm('Tem certeza? Essa ação não poderá ser desfeita.'))return;
+  if(tipo==='vendas'){
+    db.vendas=[];db.pagamentos=[];db.cobrancas=[];db.movimentacoesEstoque=[];
+  } else if(tipo==='clientes'){
+    db.clientes=[];
+  } else if(tipo==='relatorios'){
+    localStorage.removeItem('cvrelatorios');
+  } else if(tipo==='tudo'){
+    const codigoBackup=localStorage.getItem('anotaaiBackupCode');
+    if(codigoBackup && backupApiConfigurada()){
+      try{await chamarApiBackup('delete',codigoBackup); }catch(erro){ if(!confirm('Não foi possível apagar o backup online. Deseja apagar mesmo assim apenas os dados deste aparelho?'))return; }
+    }
+    db=emptyDB();
+    localStorage.removeItem('cvrelatorios');
+    localStorage.removeItem('anotaaiBackupCode');
+    localStorage.removeItem('anotaaiUltimoBackup');
+    localStorage.removeItem('anotaaiUltimaSync');
+    localStorage.removeItem('anotaaiBackupHorarios');
+    localStorage.removeItem('anotaaiBackupsExecutados');
+    localStorage.removeItem('anotaaiSyncPopupData');
+    localStorage.setItem('cvdb',JSON.stringify(db));
+    fecharModal('modalLimpeza');
+    location.reload();
+    return;
+  }
+  save();fecharModal('modalLimpeza');location.reload();
+}
 
 // ----------------------------- PWA --------------------------------
 // Guarda o pedido de instalação enviado pelo navegador até o usuário tocar
@@ -703,7 +737,22 @@ const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
 function licenseApiConfigurada() { const url=String(window.ANOTAAI_LICENSE_API||'').trim(); return /^https:\/\//i.test(url)&&!url.includes('SEU-DOMINIO'); }
 function telaAtivacao(mensagem='') { const atual=localStorage.getItem('anotaaiLicenseCode')||''; document.querySelector('#app').innerHTML=`<header class="top"><div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>Ativação do aplicativo</p></div></div></header><main class="page activation-page"><section class="card activation-card"><div class="activation-icon">🔑</div><h2>Ative seu AnotaAí</h2><p class="muted">Digite a licença recebida na compra.</p>${mensagem?`<p class="license-message">${escapeHtml(mensagem)}</p>`:''}<div class="field"><label>Chave de licença</label><input id="licenseInput" value="${escapeHtml(atual)}" autocomplete="off" autocapitalize="characters" placeholder="ANOTA-XXXX-XXXX-XXXX-XXXX"></div><button class="btn" onclick="ativarLicenca()">Ativar e continuar</button><p class="muted activation-help">É necessário conectar à internet na primeira ativação.</p></section></main>`; }
 async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
-async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();}
+function mostrarSincronizacaoDiaria() {
+  const hoje=chaveDataLocal();
+  if(localStorage.getItem('anotaaiSyncPopupData')===hoje)return;
+  localStorage.setItem('anotaaiSyncPopupData',hoje);
+  const temChave=!!localStorage.getItem('anotaaiBackupCode');
+  const modal=document.createElement('div');
+  modal.id='modalSyncDiaria';
+  modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal-box"><div class="toolbar"><div><h3>🔄 Sincronização diária</h3><p class="muted">Confira as atualizações salvas no seu backup.</p></div><button class="modal-close" onclick="fecharModal('modalSyncDiaria')">×</button></div><p>${temChave?'Deseja sincronizar agora os dados deste aparelho com o backup online?':'Configure uma chave de backup nas configurações do usuário para sincronizar os dados.'}</p>${temChave?'<button class="btn" onclick="sincronizarDiariaPeloPopup()">🔄 Sincronizar atualizações</button>':'<button class="btn" onclick="fecharModal(\'modalSyncDiaria\');configUsuario()">⚙️ Configurar chave de backup</button>'}<button class="btn secondary" onclick="fecharModal('modalSyncDiaria')">Agora não</button></div>`;
+  document.body.appendChild(modal);
+}
+async function sincronizarDiariaPeloPopup(){
+  fecharModal('modalSyncDiaria');
+  await sincronizarAgora();
+}
+async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(mostrarSincronizacaoDiaria,450);}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
 async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
