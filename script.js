@@ -560,6 +560,37 @@ function salvarProduto(id) {
     produtos();
 }
 
+function excluirProduto(id) {
+    const p = db.produtos.find(x => x.id == id);
+
+    if (!p) return;
+
+    const possuiVendas = db.vendas.some(v =>
+        v.itens?.some(i => i.produtoId == id)
+    );
+
+    let mensagem = `Tem certeza que deseja excluir o produto "${p.nome}"?`;
+
+    if (possuiVendas) {
+        mensagem +=
+            '\n\nEsse produto já aparece em vendas registradas. ' +
+            'Ele será removido apenas do cadastro atual, ' +
+            'mas continuará aparecendo no histórico dessas vendas.';
+    }
+
+    if (!confirm(mensagem)) return;
+
+    // Registra a exclusão para o sistema de sincronização
+    registrarExclusao('produtos', id);
+
+    // Remove somente do cadastro de produtos
+    db.produtos = db.produtos.filter(x => x.id != id);
+
+    save();
+
+    produtos();
+}
+
 function precoProduto(produto, pagamento) {
 
     if (pagamento === 'avista') {
