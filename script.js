@@ -577,7 +577,30 @@ function precoProduto(produto, pagamento) {
 function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return;const agora=new Date().toISOString(); p.estoque=Number(p.estoque||0)+(sinal*i.quantidade);p.atualizadoEm=agora; db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:agora,motivo,atualizadoEm:agora});}); }
 
 // ---------------------------- VENDAS -------------------------------
-function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>${db.produtos.map(p=>`<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · ${p.estoque} un.`:''}</small></span><input class="qtd" data-id="${p.id}" type="number" min="0" value="0" oninput="calcVenda()"><span id="sub${p.id}">${money(0)}</span></div>`).join('')||'<div class="empty">Cadastre produtos primeiro.</div>'}<div class="field"><label>Pagamento *</label><select id="vpagamento"><option value="prazo">A prazo</option><option value="avista">À vista</option></select><small class="muted">Escolha "À vista" quando o comprador pagar no momento da compra.</small></div><div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
+function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>
+  ${db.produtos.map(p=>`
+  <div class="product-line">
+    <span>
+      <b>${escapeHtml(p.nome)}</b><br>
+      <small>
+        ${money(precoProduto(p, 'prazo'))}
+        ${p.controlarEstoque ? ` · ${p.estoque} un.` : ''}
+      </small>
+    </span>
+
+    <input
+      class="qtd"
+      data-id="${p.id}"
+      type="number"
+      min="0"
+      value="0"
+      oninput="calcVenda()"
+    >
+
+    <span id="sub${p.id}">${money(0)}</span>
+  </div>
+`).join('') || '<div class="empty">Cadastre produtos primeiro.</div>'}
+  <div class="field"><label>Pagamento *</label><select id="vpagamento"><option value="prazo">A prazo</option><option value="avista">À vista</option></select><small class="muted">Escolha "À vista" quando o comprador pagar no momento da compra.</small></div><div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
 
 function filtrarClientesVenda() {
     const campo = document.querySelector('#buscaClienteVenda');
