@@ -1,5 +1,5 @@
 /* ================================================================
-   Versão Aplha 1.1
+   Versão Aplha 1.2
    AnotaAí - Front-end local
    ----------------------------------------------------------------
    Este protótipo usa localStorage. Não há backend nem backup nesta
