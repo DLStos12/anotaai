@@ -187,10 +187,80 @@ function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return
 function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; registrarExclusao('clientes',id); db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
 
 function formCliente(id) {
-  const c=db.clientes.find(x=>x.id==id)||{nome:'',telefone:'',observacao:'',cobrancaAtiva:false,dataHoraCobranca:''};
+  const c = db.clientes.find(x => x.id == id) || {
+        nome: nomeInicial,
+        telefone: '',
+        observacao: ''
+    };
   shell(id?'Editar cliente':'Cadastrar cliente', `<section class="card"><div class="field"><label>Nome *</label><input id="cnome" value="${escapeHtml(c.nome)}"></div><div class="field"><label>Telefone / WhatsApp</label><input id="ctel" value="${escapeHtml(c.telefone||'')}" placeholder="55999999999" inputmode="numeric"></div><div class="field"><label>Observação</label><textarea id="cobs">${escapeHtml(c.observacao||'')}</textarea></div><label class="checkline"><input id="ccobranca" type="checkbox" ${c.cobrancaAtiva?'checked':''}> Ativar lembrete de cobrança</label><div class="field"><label>Data e hora da cobrança</label><input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca||''}"></div><button class="btn" onclick="salvarCliente(${id||'null'})">Salvar cliente</button></section>`, 'mais');
 }
-function salvarCliente(id) { const nome=cnome.value.trim(), dataHora=cdatahora.value, atualizadoEm=new Date().toISOString(); if(!nome)return alert('Informe o nome.'); if(ccobranca.checked && !dataHora)return alert('Informe a data e a hora da cobrança.'); const dados={nome,telefone:ctel.value.trim(),observacao:cobs.value.trim(),cobrancaAtiva:ccobranca.checked,dataHoraCobranca:ccobranca.checked?dataHora:null,atualizadoEm}; if(id)Object.assign(db.clientes.find(c=>c.id==id),dados); else db.clientes.push({id:Date.now(),...dados}); save(); clientes(); }
+
+function salvarCliente(id) {
+    const nome = cnome.value.trim();
+    const dataHora = cdatahora.value;
+    const atualizadoEm = new Date().toISOString();
+
+    if (!nome) {
+        return alert('Informe o nome.');
+    }
+
+    if (ccobranca.checked && !dataHora) {
+        return alert('Informe a data e a hora da cobrança.');
+    }
+
+    // Verifica se já existe outro cliente com o mesmo nome
+    const nomeNormalizado = nome
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    const clienteDuplicado = db.clientes.find(c => {
+
+        // Se estiver editando, permite manter o próprio nome
+        if (id && c.id == id) {
+            return false;
+        }
+
+        const nomeExistente = c.nome
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
+
+        return nomeExistente === nomeNormalizado;
+    });
+
+    if (clienteDuplicado) {
+        return alert(
+            `Já existe um cliente cadastrado com o nome "${clienteDuplicado.nome}".`
+        );
+    }
+
+    const dados = {
+        nome,
+        telefone: ctel.value.trim(),
+        observacao: cobs.value.trim(),
+        cobrancaAtiva: ccobranca.checked,
+        dataHoraCobranca: ccobranca.checked ? dataHora : null,
+        atualizadoEm
+    };
+
+    if (id) {
+        Object.assign(
+            db.clientes.find(c => c.id == id),
+            dados
+        );
+    } else {
+        db.clientes.push({
+            id: Date.now(),
+            ...dados
+        });
+    }
+
+    save();
+    clientes();
+}
 
 // ------------------------- PAGAMENTOS ------------------------------
 function registrarPagamento(id) { const c=cliente(id); shell('Registrar pagamento', `<section class="card"><h2>${escapeHtml(c.nome)}</h2><p class="muted">Saldo atual</p><h2 class="balance-highlight">${money(saldoCliente(id))}</h2><div class="field"><label>Valor pago *</label><input id="pagvalor" type="number" min="0.01" step="0.01" placeholder="0,00"></div><div class="field"><label>Observação</label><textarea id="pagobs" placeholder="Ex.: Pix, pagamento parcial..."></textarea></div><button class="btn" onclick="salvarPagamento(${id})">Confirmar pagamento</button></section>`, 'mais'); }
@@ -474,16 +544,261 @@ function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produt
 
 // ---------------------------- VENDAS -------------------------------
 function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>${db.produtos.map(p=>`<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · ${p.estoque} un.`:''}</small></span><input class="qtd" data-id="${p.id}" type="number" min="0" value="0" oninput="calcVenda()"><span id="sub${p.id}">${money(0)}</span></div>`).join('')||'<div class="empty">Cadastre produtos primeiro.</div>'}<div class="field"><label>Pagamento *</label><select id="vpagamento"><option value="prazo">A prazo</option><option value="avista">À vista</option></select><small class="muted">Escolha "À vista" quando o comprador pagar no momento da compra.</small></div><div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
-function filtrarClientesVenda() { const termo=document.querySelector('#buscaClienteVenda').value.trim().toLowerCase(), lista=document.querySelector('#listaClientesVenda'); if(!termo){lista.innerHTML='';return;} const achados=db.clientes.filter(c=>c.nome.toLowerCase().includes(termo)).slice(0,20); lista.innerHTML=achados.map(c=>`<button class="client-search-option" onclick="selecionarClienteVenda(${c.id})"><b>${escapeHtml(c.nome)}</b><span>${escapeHtml(c.telefone||'')}</span></button>`).join('')||'<div class="client-search-empty">Nenhum cliente encontrado.</div>'; }
+
+function filtrarClientesVenda() {
+    const campo = document.querySelector('#buscaClienteVenda');
+    const lista = document.querySelector('#listaClientesVenda');
+
+    if (!campo || !lista) return;
+
+    const termo = campo.value.trim().toLowerCase();
+
+    document.querySelector('#vcliente').value = '';
+
+    if (!termo) {
+        lista.innerHTML = '';
+        return;
+    }
+
+    const encontrados = db.clientes.filter(c =>
+        c.nome.toLowerCase().includes(termo)
+    );
+
+    if (!encontrados.length) {
+        lista.innerHTML = `
+            <div class="empty">
+                <div>Nenhum cliente encontrado.</div>
+
+                <button
+                    class="btn"
+                    style="margin-top:10px"
+                    onclick="cadastrarClienteDaVenda()"
+                >
+                    + Cadastrar "${escapeHtml(campo.value.trim())}"
+                </button>
+            </div>
+        `;
+
+        return;
+    }
+
+    lista.innerHTML = encontrados.map(c => `
+        <div
+            class="client-search-item"
+            onclick="selecionarClienteVenda(${c.id})"
+        >
+            <strong>${escapeHtml(c.nome)}</strong>
+            ${c.telefone
+                ? `<small>${escapeHtml(c.telefone)}</small>`
+                : ''
+            }
+        </div>
+    `).join('');
+}
+
+function cadastrarClienteDaVenda() {
+
+    const campo = document.querySelector('#buscaClienteVenda');
+
+    if (!campo) return;
+
+    const nomeDigitado = campo.value.trim();
+
+    if (!nomeDigitado) {
+        return alert('Digite o nome do cliente.');
+    }
+
+    formCliente(null, nomeDigitado);
+}
+
 function selecionarClienteVenda(id) { const c=cliente(id); vcliente.value=id; buscaClienteVenda.value=c.nome; listaClientesVenda.innerHTML=''; clienteSelecionadoVenda.innerHTML=`Cliente selecionado: <strong>${escapeHtml(c.nome)}</strong>`; }
-function calcVenda() { let t=0; document.querySelectorAll('.qtd').forEach(i=>{const p=produto(i.dataset.id), s=p.preco*Number(i.value); t+=s; document.querySelector('#sub'+p.id).textContent=money(s);}); vtotal.textContent=money(t); }
-function coletarItensVenda() { const itens=[]; let total=0; let erro=''; document.querySelectorAll('.qtd').forEach(i=>{const q=Number(i.value),p=produto(i.dataset.id); if(q>0){if(p.controlarEstoque && q>Number(p.estoque||0))erro=`Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`; itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco}); total+=q*p.preco;}}); return {itens,total,erro}; }
+
+function calcVenda() {
+    let t = 0;
+
+    const pagamento =
+        document.querySelector('#vpagamento')?.value || 'prazo';
+
+    document.querySelectorAll('.qtd').forEach(i => {
+
+        const p = produto(i.dataset.id);
+        const q = Number(i.value);
+
+        const preco = precoProduto(p, pagamento);
+        const s = preco * q;
+
+        t += s;
+
+        const subtotal = document.querySelector('#sub' + p.id);
+
+        if (subtotal) {
+            subtotal.textContent = money(s);
+        }
+    });
+
+    const total = document.querySelector('#vtotal');
+
+    if (total) {
+        total.textContent = money(t);
+    }
+}
+
+function coletarItensVenda() {
+
+    const itens = [];
+    let total = 0;
+    let erro = '';
+
+    const pagamento =
+        document.querySelector('#vpagamento')?.value || 'prazo';
+
+    document.querySelectorAll('.qtd').forEach(i => {
+
+        const q = Number(i.value);
+        const p = produto(i.dataset.id);
+
+        if (q > 0) {
+
+            if (
+                p.controlarEstoque &&
+                q > Number(p.estoque || 0)
+            ) {
+                erro = `Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`;
+            }
+
+            const preco = precoProduto(p, pagamento);
+            const subtotal = q * preco;
+
+            itens.push({
+                produtoId: p.id,
+                nome: p.nome,
+                quantidade: q,
+                preco: preco,
+                subtotal: subtotal
+            });
+
+            total += subtotal;
+        }
+    });
+
+    return {
+        itens,
+        total,
+        erro
+    };
+}
+
 function salvarVenda() { if(!vcliente.value)return alert('Selecione o cliente.'); const {itens,total,erro}=coletarItensVenda(); if(erro)return alert(erro); if(!itens.length)return alert('Adicione pelo menos um produto.'); const formaPagamento=document.querySelector('#vpagamento')?.value||'prazo'; ajustarEstoque(itens,-1,'Venda'); const agora=new Date().toISOString(); const vendaId=Date.now(); db.vendas.push({id:vendaId,clienteId:Number(vcliente.value),data:agora,observacao:vobs.value.trim(),itens,total,pagamento:formaPagamento,atualizadoEm:agora}); if(formaPagamento==='avista'){ db.pagamentos.push({id:vendaId+1,clienteId:Number(vcliente.value),valor:total,data:agora,forma:'avista',vendaId}); } save(); alert('Venda registrada!'); vendas(); }
 function vendas() { shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div><div class="list">${db.vendas.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')} · <strong>${(v.pagamento||'prazo')==='avista'?'À vista':'A prazo'}</strong></div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('')||'<div class="empty">Nenhuma venda.</div>'}</div>`, 'vendas'); }
+
 function editarVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; // devolve apenas para validar disponibilidade durante edição
   const formaPagamentoAtual=v.pagamento||((db.pagamentos||[]).some(p=>p.vendaId==v.id)||false?'avista':'prazo');
-  shell('Editar venda', `<section class="card"><div class="notice">Venda de <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong> em ${dt(v.data)}.</div><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" value="${escapeHtml(cliente(v.clienteId).nome)}" oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden" value="${v.clienteId}"><div id="clienteSelecionadoVenda" class="selected-client muted">Cliente selecionado: <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong></div></div><h3>Produtos</h3>${db.produtos.map(p=>{const antigo=v.itens.find(i=>i.produtoId==p.id); const q=antigo?.quantidade||0; return `<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>${money(p.preco)}${p.controlarEstoque?` · disponível ${p.estoque+q}`:''}</small></span><input class="qtd" data-id="${p.id}" data-old="${q}" type="number" min="0" value="${q}" oninput="calcVenda()"><span id="sub${p.id}">${money(p.preco*q)}</span></div>`}).join('')}<div class="field"><label>Pagamento *</label><select id="vpagamento"><option value="prazo" ${formaPagamentoAtual==='prazo'?'selected':''}>A prazo</option><option value="avista" ${formaPagamentoAtual==='avista'?'selected':''}>À vista</option></select></div><div class="field"><label>Observação</label><textarea id="vobs">${escapeHtml(v.observacao||'')}</textarea></div><h2>Total: <span id="vtotal">${money(v.total)}</span></h2><button class="btn" onclick="salvarEdicaoVenda(${v.id})">Salvar alterações</button></section>`, 'vendas'); calcVenda(); }
-function salvarEdicaoVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; const itens=[]; let total=0; for(const i of document.querySelectorAll('.qtd')){const q=Number(i.value), old=Number(i.dataset.old||0), p=produto(i.dataset.id); if(p.controlarEstoque && q>Number(p.estoque||0)+old)return alert(`Estoque insuficiente de ${p.nome}.`); if(q>0){itens.push({produtoId:p.id,nome:p.nome,quantidade:q,preco:p.preco,subtotal:q*p.preco});total+=q*p.preco;}} if(!itens.length)return alert('Adicione pelo menos um produto.'); if(!confirm(`Salvar alterações? Novo total: ${money(total)}`))return; const formaPagamento=document.querySelector('#vpagamento')?.value||'prazo'; ajustarEstoque(v.itens,+1,'Estorno por edição'); ajustarEstoque(itens,-1,'Venda editada'); const agora=new Date().toISOString(); db.pagamentos=(db.pagamentos||[]).filter(p=>p.vendaId!=v.id); Object.assign(v,{clienteId:Number(vcliente.value),observacao:vobs.value.trim(),itens,total,pagamento:formaPagamento,editadoEm:agora,atualizadoEm:agora}); if(formaPagamento==='avista'){ db.pagamentos.push({id:Date.now()+1,clienteId:Number(vcliente.value),valor:total,data:agora,forma:'avista',vendaId:v.id}); } save(); vendas(); }
+  shell('Editar venda', `<section class="card"><div class="notice">Venda de <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong> em ${dt(v.data)}.</div><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" value="${escapeHtml(cliente(v.clienteId).nome)}" oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden" value="${v.clienteId}"><div id="clienteSelecionadoVenda" class="selected-client muted">Cliente selecionado: <strong>${escapeHtml(cliente(v.clienteId).nome)}</strong></div></div><h3>Produtos</h3>${db.produtos.map(p=>{const antigo=v.itens.find(i=>i.produtoId==p.id); const q=antigo?.quantidade||0; return `<div class="product-line"><span><b>${escapeHtml(p.nome)}</b><br><small>
+    A prazo: ${money(p.precoPrazo ?? p.preco)}
+    · À vista: ${money(p.precoAvista ?? p.precoPrazo ?? p.preco)}
+    ${p.controlarEstoque ? ` · disponível ${p.estoque+q}` : ''}
+</small></span><input class="qtd" data-id="${p.id}" data-old="${q}" type="number" min="0" value="${q}" oninput="calcVenda()"><span id="sub${p.id}">${money(p.preco*q)}</span></div>`}).join('')}<div class="field"><label>Pagamento *</label><select id="vpagamento"  onchange="calcVenda()"><option value="prazo" ${formaPagamentoAtual==='prazo'?'selected':''}>A prazo</option><option value="avista" ${formaPagamentoAtual==='avista'?'selected':''}>À vista</option></select></div><div class="field"><label>Observação</label><textarea id="vobs">${escapeHtml(v.observacao||'')}</textarea></div><h2>Total: <span id="vtotal">${money(v.total)}</span></h2><button class="btn" onclick="salvarEdicaoVenda(${v.id})">Salvar alterações</button></section>`, 'vendas'); calcVenda(); }
+
+function salvarEdicaoVenda(id) {
+
+    const v = db.vendas.find(x => x.id == id);
+
+    if (!v) return;
+
+    const itens = [];
+    let total = 0;
+
+    const pagamento =
+        document.querySelector('#vpagamento')?.value || 'prazo';
+
+    for (const i of document.querySelectorAll('.qtd')) {
+
+        const q = Number(i.value);
+        const old = Number(i.dataset.old || 0);
+        const p = produto(i.dataset.id);
+
+        if (
+            p.controlarEstoque &&
+            q > Number(p.estoque || 0) + old
+        ) {
+            return alert(
+                `Estoque insuficiente de ${p.nome}.`
+            );
+        }
+
+        if (q > 0) {
+
+            const preco = precoProduto(p, pagamento);
+            const subtotal = q * preco;
+
+            itens.push({
+                produtoId: p.id,
+                nome: p.nome,
+                quantidade: q,
+                preco: preco,
+                subtotal: subtotal
+            });
+
+            total += subtotal;
+        }
+    }
+
+    if (!itens.length) {
+        return alert('Adicione pelo menos um produto.');
+    }
+
+    if (
+        !confirm(
+            `Salvar alterações?\n\nNovo total: ${money(total)}`
+        )
+    ) {
+        return;
+    }
+
+    ajustarEstoque(
+        v.itens,
+        +1,
+        'Estorno por edição'
+    );
+
+    ajustarEstoque(
+        itens,
+        -1,
+        'Venda editada'
+    );
+
+    const agora = new Date().toISOString();
+
+    db.pagamentos =
+        (db.pagamentos || [])
+        .filter(p => p.vendaId != v.id);
+
+    Object.assign(v, {
+        clienteId: Number(vcliente.value),
+        observacao: vobs.value.trim(),
+        itens,
+        total,
+        pagamento,
+        editadoEm: agora,
+        atualizadoEm: agora
+    });
+
+    if (pagamento === 'avista') {
+
+        db.pagamentos.push({
+            id: Date.now() + 1,
+            clienteId: Number(vcliente.value),
+            valor: total,
+            data: agora,
+            forma: 'avista',
+            vendaId: v.id
+        });
+    }
+
+    save();
+
+    vendas();
+}
 
 // -------------------------- RELATÓRIOS -----------------------------
 function relatorios() { shell('Relatórios', `<section class="card"><div class="row"><div class="field"><label>De</label><input id="rini" type="date"></div><div class="field"><label>Até</label><input id="rfim" type="date"></div></div><div class="field"><label>Cliente</label><select id="rcli"><option value="">Todos</option>${db.clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div><button class="btn" onclick="gerarRelatorio()">Gerar relatório</button></section><div id="resultado"></div>`, 'relatorios'); }
