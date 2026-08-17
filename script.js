@@ -186,13 +186,47 @@ function registrarExclusao(tipo,id){db.exclusoes||=[];db.exclusoes=db.exclusoes.
 function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return; if(!confirm(`Excluir ${ids.length} cliente(s)? O histórico financeiro será preservado.`))return; ids.forEach(id=>registrarExclusao('clientes',id)); db.clientes=db.clientes.filter(c=>!ids.includes(c.id)); save(); clientes(); }
 function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; registrarExclusao('clientes',id); db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
 
-function formCliente(id) {
+function formCliente(id, nomeInicial = '') {
   const c = db.clientes.find(x => x.id == id) || {
-        nome: nomeInicial,
-        telefone: '',
-        observacao: ''
-    };
-  shell(id?'Editar cliente':'Cadastrar cliente', `<section class="card"><div class="field"><label>Nome *</label><input id="cnome" value="${escapeHtml(c.nome)}"></div><div class="field"><label>Telefone / WhatsApp</label><input id="ctel" value="${escapeHtml(c.telefone||'')}" placeholder="55999999999" inputmode="numeric"></div><div class="field"><label>Observação</label><textarea id="cobs">${escapeHtml(c.observacao||'')}</textarea></div><label class="checkline"><input id="ccobranca" type="checkbox" ${c.cobrancaAtiva?'checked':''}> Ativar lembrete de cobrança</label><div class="field"><label>Data e hora da cobrança</label><input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca||''}"></div><button class="btn" onclick="salvarCliente(${id||'null'})">Salvar cliente</button></section>`, 'mais');
+    nome: nomeInicial,
+    telefone: '',
+    observacao: ''
+  };
+
+  shell(
+    id ? 'Editar cliente' : 'Cadastrar cliente',
+    `<section class="card">
+      <div class="field">
+        <label>Nome *</label>
+        <input id="cnome" value="${escapeHtml(c.nome)}">
+      </div>
+
+      <div class="field">
+        <label>Telefone / WhatsApp</label>
+        <input id="ctel" value="${escapeHtml(c.telefone || '')}" placeholder="55999999999" inputmode="numeric">
+      </div>
+
+      <div class="field">
+        <label>Observação</label>
+        <textarea id="cobs">${escapeHtml(c.observacao || '')}</textarea>
+      </div>
+
+      <label class="checkline">
+        <input id="ccobranca" type="checkbox" ${c.cobrancaAtiva ? 'checked' : ''}>
+        Ativar lembrete de cobrança
+      </label>
+
+      <div class="field">
+        <label>Data e hora da cobrança</label>
+        <input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca || ''}">
+      </div>
+
+      <button class="btn" onclick="salvarCliente(${id || 'null'})">
+        Salvar cliente
+      </button>
+    </section>`,
+    'mais'
+  );
 }
 
 function salvarCliente(id) {
