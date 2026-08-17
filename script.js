@@ -835,7 +835,62 @@ function salvarEdicaoVenda(id) {
 }
 
 // -------------------------- RELATÓRIOS -----------------------------
-function relatorios() { shell('Relatórios', `<section class="card"><div class="row"><div class="field"><label>De</label><input id="rini" type="date"></div><div class="field"><label>Até</label><input id="rfim" type="date"></div></div><div class="field"><label>Cliente</label><select id="rcli"><option value="">Todos</option>${db.clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div><button class="btn" onclick="gerarRelatorio()">Gerar relatório</button></section><div id="resultado"></div>`, 'relatorios'); }
+function relatorios() {
+  shell('Relatórios', `
+    <section class="card">
+
+      <div class="row">
+        <div class="field">
+          <label>De</label>
+          <input id="rini" type="date">
+        </div>
+
+        <div class="field">
+          <label>Até</label>
+          <input id="rfim" type="date">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Cliente</label>
+
+        <input
+          id="buscaClienteRelatorio"
+          type="search"
+          placeholder="Digite o nome do cliente..."
+          oninput="filtrarClientesRelatorio()"
+          autocomplete="off"
+        >
+
+        <div
+          id="listaClientesRelatorio"
+          class="client-search-results"
+        ></div>
+
+        <input
+          id="rcli"
+          type="hidden"
+          value=""
+        >
+
+        <div
+          id="clienteSelecionadoRelatorio"
+          class="selected-client muted"
+        >
+          Todos os clientes.
+        </div>
+      </div>
+
+      <button class="btn" onclick="gerarRelatorio()">
+        Gerar relatório
+      </button>
+
+    </section>
+
+    <div id="resultado"></div>
+  `, 'relatorios');
+}
+
 function gerarRelatorio() { const inicio=rini.value?new Date(rini.value+'T00:00:00'):null, fim=rfim.value?new Date(rfim.value+'T23:59:59'):null, cli=rcli.value; const ok=d=>(!inicio||new Date(d)>=inicio)&&(!fim||new Date(d)<=fim); const vs=db.vendas.filter(v=>ok(v.data)&&(!cli||v.clienteId==cli)), ps=db.pagamentos.filter(p=>ok(p.data)&&(!cli||p.clienteId==cli)); const grupos={}; const grupo=id=>grupos[id]||(grupos[id]={total:0,pago:0,prazo:{total:0,itens:{}},avista:{total:0,itens:{}}}); vs.forEach(v=>{const g=grupo(v.clienteId);const tipo=(v.pagamento||'prazo')==='avista'?'avista':'prazo';g.total+=v.total;g[tipo].total+=v.total;v.itens.forEach(i=>{g[tipo].itens[i.nome]=(g[tipo].itens[i.nome]||0)+i.quantidade})}); ps.forEach(p=>grupo(p.clienteId).pago+=p.valor); const tv=vs.reduce((s,v)=>s+v.total,0),tp=ps.reduce((s,p)=>s+p.valor,0); const itensTexto=g=>Object.entries(g.itens).map(([n,q])=>q+' '+escapeHtml(n)).join(', ')||'-'; const linhas=Object.entries(grupos).map(([id,g])=>`<tr><td rowspan="2">${escapeHtml(cliente(id).nome)}</td><td><strong>A prazo</strong></td><td>${money(g.prazo.total)}</td><td>${itensTexto(g.prazo)}</td></tr><tr><td><strong>À vista</strong></td><td>${money(g.avista.total)}</td><td>${itensTexto(g.avista)}</td></tr>`).join(''); let detalhe=''; if(cli){detalhe=`<section class="card"><h3>Detalhamento de ${escapeHtml(cliente(cli).nome)}</h3>${vs.sort((a,b)=>new Date(a.data)-new Date(b.data)).map(v=>`<div class="detail-sale"><div class="toolbar"><div><b>${new Date(v.data).toLocaleDateString('pt-BR')}</b><div class="muted">${new Date(v.data).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · <strong>${(v.pagamento||'prazo')==='avista'?'À vista':'A prazo'}</strong></div></div><strong>${money(v.total)}</strong></div>${v.itens.map(i=>`<div>${i.quantidade}x ${escapeHtml(i.nome)} — ${money(i.subtotal)}</div>`).join('')}${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div>`).join('')||'<div class="empty">Nenhuma compra.</div>'}<h3>Pagamentos</h3>${ps.map(p=>`<div class="item"><span>${dt(p.data)}</span><b>${money(p.valor)}</b></div>`).join('')||'<div class="empty">Nenhum pagamento.</div>'}</section>`;} resultado.innerHTML=`<section class="card"><div class="toolbar"><h3>Resultado do relatório</h3><button class="btn" onclick="exportarRelatorioPDF()">📄 Exportar PDF</button></div><div class="report-summary"><div><span>Vendido</span><strong>${money(tv)}</strong></div><div><span>Pago</span><strong>${money(tp)}</strong></div><div><span>Em aberto</span><strong>${money(Math.max(0,tv-tp))}</strong></div></div><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Pagamento</th><th>Total</th><th>Itens</th></tr></thead><tbody>${linhas||'<tr><td colspan="4">Nenhum movimento.</td></tr>'}</tbody></table></div></section>${detalhe}`; }
 
 // ----------------------- EXPORTAÇÃO PARA PDF ----------------------
