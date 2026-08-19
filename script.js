@@ -612,30 +612,182 @@ function precoProduto(produto, pagamento) {
 function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return;const agora=new Date().toISOString(); p.estoque=Number(p.estoque||0)+(sinal*i.quantidade);p.atualizadoEm=agora; db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:agora,motivo,atualizadoEm:agora});}); }
 
 // ---------------------------- VENDAS -------------------------------
-function novaVenda() { shell('Nova venda', `<section class="card"><div class="field"><label>Cliente *</label><input id="buscaClienteVenda" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarClientesVenda()"><div id="listaClientesVenda" class="client-search-results"></div><input id="vcliente" type="hidden"><div id="clienteSelecionadoVenda" class="selected-client muted">Nenhum cliente selecionado.</div></div><h3>Produtos</h3>
-  ${db.produtos.map(p=>`
-  <div class="product-line">
-    <span>
-      <b>${escapeHtml(p.nome)}</b><br>
-      <small>
-        ${money(precoProduto(p, 'prazo'))}
-        ${p.controlarEstoque ? ` · ${p.estoque} un.` : ''}
-      </small>
-    </span>
+function novaVenda() {
+    shell('Nova venda', `
+        <section class="card">
 
-    <input
-      class="qtd"
-      data-id="${p.id}"
-      type="number"
-      min="0"
-      value="0"
-      oninput="calcVenda()"
-    >
+            <div class="field">
+                <label>Cliente *</label>
 
-    <span id="sub${p.id}">${money(0)}</span>
-  </div>
-`).join('') || '<div class="empty">Cadastre produtos primeiro.</div>'}
-  <div class="field"><label>Pagamento *</label><select id="vpagamento"><option value="prazo">A prazo</option><option value="avista">À vista</option></select><small class="muted">Escolha "À vista" quando o comprador pagar no momento da compra.</small></div><div class="field"><label>Observação</label><textarea id="vobs" placeholder="Opcional"></textarea></div><h2>Total: <span id="vtotal">${money(0)}</span></h2><button class="btn" onclick="salvarVenda()">Confirmar venda</button></section>`, 'vendas'); }
+                <input
+                    id="buscaClienteVenda"
+                    type="search"
+                    placeholder="Digite o nome do cliente..."
+                    oninput="filtrarClientesVenda()"
+                    autocomplete="off"
+                >
+
+                <div
+                    id="listaClientesVenda"
+                    class="client-search-results"
+                ></div>
+
+                <input id="vcliente" type="hidden">
+
+                <div
+                    id="clienteSelecionadoVenda"
+                    class="selected-client muted"
+                >
+                    Nenhum cliente selecionado.
+                </div>
+            </div>
+
+            <h3>Produtos</h3>
+
+            ${
+                db.produtos.map(p => `
+                    <div class="product-line">
+
+                        <span>
+                            <b>${escapeHtml(p.nome)}</b><br>
+
+                            <small>
+                                ${money(precoProduto(p, 'prazo'))}
+                                ${
+                                    p.controlarEstoque
+                                        ? ` · ${p.estoque} un.`
+                                        : ''
+                                }
+                            </small>
+                        </span>
+
+                        <input
+                            class="qtd"
+                            data-id="${p.id}"
+                            type="number"
+                            min="0"
+                            value="0"
+                            oninput="calcVenda()"
+                        >
+
+                        <span id="sub${p.id}">
+                            ${money(0)}
+                        </span>
+
+                    </div>
+                `).join('')
+                || '<div class="empty">Cadastre produtos primeiro.</div>'
+            }
+
+
+            <!-- PRODUTO PERSONALIZADO -->
+
+            <div class="custom-product-box">
+
+                <h3>➕ Produto personalizado</h3>
+
+                <div class="field">
+                    <label>Nome do produto</label>
+
+                    <input
+                        id="personalizadoNome"
+                        type="text"
+                        placeholder="Ex.: Serviço, taxa, item avulso..."
+                    >
+                </div>
+
+                <div class="row">
+
+                    <div class="field">
+                        <label>Preço</label>
+
+                        <input
+                            id="personalizadoPreco"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0,00"
+                        >
+                    </div>
+
+                    <div class="field">
+                        <label>Quantidade</label>
+
+                        <input
+                            id="personalizadoQuantidade"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value="1"
+                        >
+                    </div>
+
+                </div>
+
+                <button
+                    type="button"
+                    class="btn secondary"
+                    onclick="adicionarProdutoPersonalizado()"
+                >
+                    + Adicionar produto
+                </button>
+
+            </div>
+
+
+            <!-- ITENS PERSONALIZADOS DA VENDA -->
+
+            <div id="listaProdutosPersonalizados"></div>
+
+
+            <div class="field">
+                <label>Pagamento *</label>
+
+                <select
+                    id="vpagamento"
+                    onchange="calcVenda()"
+                >
+                    <option value="prazo">A prazo</option>
+                    <option value="avista">À vista</option>
+                </select>
+
+                <small class="muted">
+                    Escolha "À vista" quando o comprador pagar no momento da compra.
+                </small>
+            </div>
+
+
+            <div class="field">
+                <label>Observação</label>
+
+                <textarea
+                    id="vobs"
+                    placeholder="Opcional"
+                ></textarea>
+            </div>
+
+
+            <h2>
+                Total:
+                <span id="vtotal">${money(0)}</span>
+            </h2>
+
+
+            <button
+                class="btn"
+                onclick="salvarVenda()"
+            >
+                Confirmar venda
+            </button>
+
+        </section>
+    `, 'vendas');
+
+    // Guarda os personalizados somente enquanto a venda está sendo montada.
+    window.produtosPersonalizadosVenda = [];
+
+    calcVenda();
+}
 
 function filtrarClientesVenda() {
     const campo = document.querySelector('#buscaClienteVenda');
@@ -705,30 +857,167 @@ function cadastrarClienteDaVenda() {
 
 function selecionarClienteVenda(id) { const c=cliente(id); vcliente.value=id; buscaClienteVenda.value=c.nome; listaClientesVenda.innerHTML=''; clienteSelecionadoVenda.innerHTML=`Cliente selecionado: <strong>${escapeHtml(c.nome)}</strong>`; }
 
+function adicionarProdutoPersonalizado() {
+
+    const nomeInput = document.querySelector('#personalizadoNome');
+    const precoInput = document.querySelector('#personalizadoPreco');
+    const quantidadeInput = document.querySelector('#personalizadoQuantidade');
+
+    if (!nomeInput || !precoInput || !quantidadeInput) return;
+
+    const nome = nomeInput.value.trim();
+    const preco = Number(precoInput.value);
+    const quantidade = Number(quantidadeInput.value);
+
+    if (!nome) {
+        return alert('Informe o nome do produto.');
+    }
+
+    if (!Number.isFinite(preco) || preco < 0) {
+        return alert('Informe um preço válido.');
+    }
+
+    if (!Number.isInteger(quantidade) || quantidade <= 0) {
+        return alert('Informe uma quantidade válida.');
+    }
+
+    if (!window.produtosPersonalizadosVenda) {
+        window.produtosPersonalizadosVenda = [];
+    }
+
+    const item = {
+        id: Date.now() + Math.random(),
+        produtoId: null,
+        personalizado: true,
+        nome,
+        quantidade,
+        preco,
+        subtotal: quantidade * preco
+    };
+
+    window.produtosPersonalizadosVenda.push(item);
+
+    nomeInput.value = '';
+    precoInput.value = '';
+    quantidadeInput.value = 1;
+
+    renderizarProdutosPersonalizados();
+
+    calcVenda();
+}
+
+
+function removerProdutoPersonalizado(id) {
+
+    if (!window.produtosPersonalizadosVenda) return;
+
+    window.produtosPersonalizadosVenda =
+        window.produtosPersonalizadosVenda.filter(
+            item => item.id != id
+        );
+
+    renderizarProdutosPersonalizados();
+
+    calcVenda();
+}
+
+
+function renderizarProdutosPersonalizados() {
+
+    const container =
+        document.querySelector('#listaProdutosPersonalizados');
+
+    if (!container) return;
+
+    const itens = window.produtosPersonalizadosVenda || [];
+
+    if (!itens.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="custom-products-list">
+
+            <h3>Produtos personalizados adicionados</h3>
+
+            ${itens.map(item => `
+                <div class="product-line custom-product-item">
+
+                    <span>
+                        <b>${escapeHtml(item.nome)}</b><br>
+                        <small>
+                            ${item.quantidade}x
+                            ${money(item.preco)}
+                        </small>
+                    </span>
+
+                    <span>
+                        ${money(item.subtotal)}
+                    </span>
+
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        onclick="removerProdutoPersonalizado(${item.id})"
+                    >
+                        🗑️
+                    </button>
+
+                </div>
+            `).join('')}
+
+        </div>
+    `;
+}
+
 function calcVenda() {
+
     let t = 0;
 
     const pagamento =
         document.querySelector('#vpagamento')?.value || 'prazo';
 
+
+    // Produtos cadastrados
     document.querySelectorAll('.qtd').forEach(i => {
 
         const p = produto(i.dataset.id);
+
+        if (!p) return;
+
         const q = Number(i.value);
 
-        const preco = precoProduto(p, pagamento);
+        const preco =
+            precoProduto(p, pagamento);
+
         const s = preco * q;
 
         t += s;
 
-        const subtotal = document.querySelector('#sub' + p.id);
+        const subtotal =
+            document.querySelector('#sub' + p.id);
 
         if (subtotal) {
             subtotal.textContent = money(s);
         }
+
     });
 
-    const total = document.querySelector('#vtotal');
+
+    // Produtos personalizados
+    const personalizados =
+        window.produtosPersonalizadosVenda || [];
+
+    personalizados.forEach(item => {
+
+        t += Number(item.subtotal || 0);
+
+    });
+
+
+    const total =
+        document.querySelector('#vtotal');
 
     if (total) {
         total.textContent = money(t);
