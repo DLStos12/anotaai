@@ -1069,7 +1069,70 @@ function coletarItensVenda() {
     };
 }
 
-function salvarVenda() { if(!vcliente.value)return alert('Selecione o cliente.'); const {itens,total,erro}=coletarItensVenda(); if(erro)return alert(erro); if(!itens.length)return alert('Adicione pelo menos um produto.'); const formaPagamento=document.querySelector('#vpagamento')?.value||'prazo'; ajustarEstoque(itens,-1,'Venda'); const agora=new Date().toISOString(); const vendaId=Date.now(); db.vendas.push({id:vendaId,clienteId:Number(vcliente.value),data:agora,observacao:vobs.value.trim(),itens,total,pagamento:formaPagamento,atualizadoEm:agora}); if(formaPagamento==='avista'){ db.pagamentos.push({id:vendaId+1,clienteId:Number(vcliente.value),valor:total,data:agora,forma:'avista',vendaId}); } save(); alert('Venda registrada!'); vendas(); }
+function salvarVenda() {
+
+    if (!vcliente.value) {
+        return alert('Selecione o cliente.');
+    }
+
+    const {
+        itens,
+        total,
+        erro
+    } = coletarItensVenda();
+
+    if (erro) {
+        return alert(erro);
+    }
+
+    if (!itens.length) {
+        return alert('Adicione pelo menos um produto ou produto personalizado.');
+    }
+
+    const formaPagamento =
+        document.querySelector('#vpagamento')?.value || 'prazo';
+
+    // Ajusta estoque somente dos produtos cadastrados
+    ajustarEstoque(itens, -1, 'Venda');
+
+    const agora = new Date().toISOString();
+
+    const vendaId = Date.now();
+
+    db.vendas.push({
+        id: vendaId,
+        clienteId: Number(vcliente.value),
+        data: agora,
+        observacao: vobs.value.trim(),
+        itens,
+        total,
+        pagamento: formaPagamento,
+        atualizadoEm: agora
+    });
+
+    if (formaPagamento === 'avista') {
+
+        db.pagamentos.push({
+            id: vendaId + 1,
+            clienteId: Number(vcliente.value),
+            valor: total,
+            data: agora,
+            forma: 'avista',
+            vendaId
+        });
+
+    }
+
+    save();
+
+    // Limpa os personalizados depois de salvar
+    window.produtosPersonalizadosVenda = [];
+
+    alert('Venda registrada!');
+
+    vendas();
+}
+
 function vendas() { shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div><div class="list">${db.vendas.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')} · <strong>${(v.pagamento||'prazo')==='avista'?'À vista':'A prazo'}</strong></div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('')||'<div class="empty">Nenhuma venda.</div>'}</div>`, 'vendas'); }
 
 function editarVenda(id) { const v=db.vendas.find(x=>x.id==id); if(!v)return; // devolve apenas para validar disponibilidade durante edição
