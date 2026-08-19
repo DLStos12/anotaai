@@ -609,10 +609,46 @@ function precoProduto(produto, pagamento) {
     );
 }
 
-function ajustarEstoque(itens, sinal, motivo) { itens.forEach(i=>{const p=produto(i.produtoId); if(!p.controlarEstoque)return;const agora=new Date().toISOString(); p.estoque=Number(p.estoque||0)+(sinal*i.quantidade);p.atualizadoEm=agora; db.movimentacoesEstoque.push({id:Date.now()+Math.random(),produtoId:p.id,tipo:sinal>0?'entrada':'saida',quantidade:i.quantidade,data:agora,motivo,atualizadoEm:agora});}); }
+function ajustarEstoque(itens, sinal, motivo) {
+
+    itens.forEach(i => {
+
+        // Produto personalizado não possui estoque
+        if (i.personalizado || !i.produtoId) {
+            return;
+        }
+
+        const p = produto(i.produtoId);
+
+        if (!p || !p.controlarEstoque) {
+            return;
+        }
+
+        const agora =
+            new Date().toISOString();
+
+        p.estoque =
+            Number(p.estoque || 0) +
+            (sinal * i.quantidade);
+
+        p.atualizadoEm = agora;
+
+        db.movimentacoesEstoque.push({
+            id: Date.now() + Math.random(),
+            produtoId: p.id,
+            tipo: sinal > 0 ? 'entrada' : 'saida',
+            quantidade: i.quantidade,
+            data: agora,
+            motivo,
+            atualizadoEm: agora
+        });
+
+    });
+}
 
 // ---------------------------- VENDAS -------------------------------
 function novaVenda() {
+    window.produtosPersonalizadosVenda = [];
     shell('Nova venda', `
         <section class="card">
 
@@ -971,9 +1007,120 @@ function renderizarProdutosPersonalizados() {
     `;
 }
 
+function adicionarProdutoPersonalizado() {
+
+    const nomeInput = document.querySelector('#personalizadoNome');
+    const precoInput = document.querySelector('#personalizadoPreco');
+    const quantidadeInput = document.querySelector('#personalizadoQuantidade');
+
+    if (!nomeInput || !precoInput || !quantidadeInput) return;
+
+    const nome = nomeInput.value.trim();
+    const preco = Number(precoInput.value);
+    const quantidade = Number(quantidadeInput.value);
+
+    if (!nome) {
+        return alert('Informe o nome do produto.');
+    }
+
+    if (!Number.isFinite(preco) || preco < 0) {
+        return alert('Informe um preço válido.');
+    }
+
+    if (!Number.isInteger(quantidade) || quantidade <= 0) {
+        return alert('Informe uma quantidade válida.');
+    }
+
+    if (!window.produtosPersonalizadosVenda) {
+        window.produtosPersonalizadosVenda = [];
+    }
+
+    window.produtosPersonalizadosVenda.push({
+        id: Date.now() + Math.random(),
+        produtoId: null,
+        personalizado: true,
+        nome: nome,
+        quantidade: quantidade,
+        preco: preco,
+        subtotal: quantidade * preco
+    });
+
+    nomeInput.value = '';
+    precoInput.value = '';
+    quantidadeInput.value = 1;
+
+    renderizarProdutosPersonalizados();
+    calcVenda();
+}
+
+
+function removerProdutoPersonalizado(id) {
+
+    if (!window.produtosPersonalizadosVenda) return;
+
+    window.produtosPersonalizadosVenda =
+        window.produtosPersonalizadosVenda.filter(
+            item => item.id != id
+        );
+
+    renderizarProdutosPersonalizados();
+    calcVenda();
+}
+
+
+function renderizarProdutosPersonalizados() {
+
+    const container =
+        document.querySelector('#listaProdutosPersonalizados');
+
+    if (!container) return;
+
+    const itens =
+        window.produtosPersonalizadosVenda || [];
+
+    if (!itens.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="custom-products-list">
+
+            <h3>Produtos personalizados adicionados</h3>
+
+            ${itens.map(item => `
+                <div class="product-line">
+
+                    <span>
+                        <b>${escapeHtml(item.nome)}</b><br>
+                        <small>
+                            ${item.quantidade}x
+                            ${money(item.preco)}
+                        </small>
+                    </span>
+
+                    <span>
+                        ${money(item.subtotal)}
+                    </span>
+
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        onclick="removerProdutoPersonalizado(${item.id})"
+                    >
+                        🗑️
+                    </button>
+
+                </div>
+            `).join('')}
+
+        </div>
+    `;
+}
+
 function calcVenda() {
 
-    let t = 0;
+    let total = 0;
 
     const pagamento =
         document.querySelector('#vpagamento')?.value || 'prazo';
@@ -991,15 +1138,17 @@ function calcVenda() {
         const preco =
             precoProduto(p, pagamento);
 
-        const s = preco * q;
-
-        t += s;
-
         const subtotal =
+            preco * q;
+
+        total += subtotal;
+
+        const elemento =
             document.querySelector('#sub' + p.id);
 
-        if (subtotal) {
-            subtotal.textContent = money(s);
+        if (elemento) {
+            elemento.textContent =
+                money(subtotal);
         }
 
     });
@@ -1011,16 +1160,17 @@ function calcVenda() {
 
     personalizados.forEach(item => {
 
-        t += Number(item.subtotal || 0);
+        total += Number(item.subtotal || 0);
 
     });
 
 
-    const total =
+    const totalElemento =
         document.querySelector('#vtotal');
 
-    if (total) {
-        total.textContent = money(t);
+    if (totalElemento) {
+        totalElemento.textContent =
+            money(total);
     }
 }
 
@@ -1033,34 +1183,93 @@ function coletarItensVenda() {
     const pagamento =
         document.querySelector('#vpagamento')?.value || 'prazo';
 
+
+    // ==========================================
+    // PRODUTOS CADASTRADOS
+    // ==========================================
+
     document.querySelectorAll('.qtd').forEach(i => {
 
         const q = Number(i.value);
         const p = produto(i.dataset.id);
 
-        if (q > 0) {
+        if (!p || q <= 0) return;
 
-            if (
-                p.controlarEstoque &&
-                q > Number(p.estoque || 0)
-            ) {
-                erro = `Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`;
-            }
 
-            const preco = precoProduto(p, pagamento);
-            const subtotal = q * preco;
-
-            itens.push({
-                produtoId: p.id,
-                nome: p.nome,
-                quantidade: q,
-                preco: preco,
-                subtotal: subtotal
-            });
-
-            total += subtotal;
+        if (
+            p.controlarEstoque &&
+            q > Number(p.estoque || 0)
+        ) {
+            erro =
+                `Estoque insuficiente de ${p.nome}. ` +
+                `Disponível: ${p.estoque}.`;
         }
+
+
+        const preco =
+            precoProduto(p, pagamento);
+
+        const subtotal =
+            q * preco;
+
+
+        itens.push({
+            produtoId: p.id,
+            personalizado: false,
+            nome: p.nome,
+            quantidade: q,
+            preco: preco,
+            subtotal: subtotal
+        });
+
+
+        total += subtotal;
+
     });
+
+
+    // ==========================================
+    // PRODUTOS PERSONALIZADOS
+    // ==========================================
+
+    const personalizados =
+        window.produtosPersonalizadosVenda || [];
+
+
+    personalizados.forEach(item => {
+
+        const quantidade =
+            Number(item.quantidade || 0);
+
+        const preco =
+            Number(item.preco || 0);
+
+        if (
+            !item.nome ||
+            quantidade <= 0
+        ) {
+            return;
+        }
+
+
+        const subtotal =
+            quantidade * preco;
+
+
+        itens.push({
+            produtoId: null,
+            personalizado: true,
+            nome: item.nome,
+            quantidade: quantidade,
+            preco: preco,
+            subtotal: subtotal
+        });
+
+
+        total += subtotal;
+
+    });
+
 
     return {
         itens,
