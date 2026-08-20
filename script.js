@@ -83,7 +83,31 @@ function shell(title, content, active='inicio') {
   const avisos = notificacoesCount();
   document.querySelector('#app').innerHTML = `
     <header class="top">
-      <div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>${title}</p></div></div>
+      <div class="brand-wrap">
+        <svg class="app-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+          <defs>
+            <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#0A1D4E"/><stop offset="100%" stop-color="#030E29"/></linearGradient>
+            <linearGradient id="greenGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#3DE049"/><stop offset="100%" stop-color="#1BA227"/></linearGradient>
+            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.35"/></filter>
+          </defs>
+          <rect x="24" y="24" width="464" height="464" rx="100" fill="url(#bgGrad)"/>
+          <g filter="url(#shadow)">
+            <path d="M 120 115 C 115 115 110 120 110 125 L 132 385 C 133 395 142 402 152 402 L 320 380 C 330 379 337 370 335 360 L 315 115 Z" fill="#1852C8"/>
+            <path d="M 128 110 C 128 98 138 88 150 88 L 358 88 C 370 88 380 98 380 110 L 380 360 L 362 372 L 344 360 L 326 372 L 308 360 L 290 372 L 272 360 L 254 372 L 236 360 L 218 372 L 200 360 L 182 372 L 164 360 L 146 372 L 128 360 Z" fill="#FFFFFF"/>
+          </g>
+          <g fill="none" stroke="#0D2B6B" stroke-width="12" stroke-linecap="round"><path d="M 172 70 L 172 120"/><path d="M 222 70 L 222 120"/><path d="M 272 70 L 272 120"/><path d="M 322 70 L 322 120"/></g>
+          <g fill="#0D2B6B">
+            <path d="M 160 162 H 168 L 178 190 H 210 L 218 162 H 160 Z M 180 200 A 5 5 0 1 1 180 210 A 5 5 0 1 1 180 200 Z M 205 200 A 5 5 0 1 1 205 210 A 5 5 0 1 1 205 200 Z"/>
+            <circle cx="185" cy="242" r="11"/>
+            <path d="M 168 272 C 168 260 175 257 185 257 C 195 257 202 260 202 272 Z"/>
+            <text x="172" y="340" font-family="Arial, sans-serif" font-weight="900" font-size="38" fill="#0D2B6B">$</text>
+            <rect x="230" y="162" width="85" height="11" rx="5.5"/><rect x="230" y="184" width="65" height="11" rx="5.5"/><rect x="226" y="240" width="75" height="11" rx="5.5"/><rect x="226" y="262" width="55" height="11" rx="5.5"/><rect x="232" y="312" width="65" height="11" rx="5.5"/><rect x="232" y="334" width="45" height="11" rx="5.5"/>
+          </g>
+          <g fill="#3DE049"><rect x="382" y="96" width="10" height="28" rx="5" transform="rotate(25 387 110)"/><rect x="402" y="128" width="10" height="28" rx="5" transform="rotate(65 407 142)"/><rect x="402" y="172" width="10" height="24" rx="5" transform="rotate(100 407 184)"/></g>
+          <g filter="url(#shadow)"><circle cx="360" cy="285" r="72" fill="url(#greenGrad)"/><path d="M 322 285 L 348 312 L 402 252" fill="none" stroke="#FFFFFF" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/></g>
+        </svg>
+        <div class="top-text"><h1>AnotaAí</h1><p>${title}</p></div>
+      </div>
       <div class="top-actions">
         <button class="bell" onclick="abrirNotificacoes()" title="Notificações">🔔${avisos ? `<span>${avisos}</span>` : ''}</button>
         <label class="theme-toggle" title="Alternar modo claro/escuro"><input type="checkbox" ${document.documentElement.dataset.theme==='dark'?'checked':''} onchange="toggleTheme(this.checked)"><span class="theme-slider"><span>☀️</span><span>🌙</span></span></label>
