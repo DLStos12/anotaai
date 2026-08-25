@@ -1732,6 +1732,7 @@ const BACKUP_LISTAS = ['clientes','produtos','vendas','pagamentos','movimentacoe
 let timerBackupOnline = null;
 let timerAgendaBackup = null;
 let backupAgendadoEmAndamento = false;
+let sincronizacaoOnlineEmAndamento = null;
 let eventosAgendaConfigurados = false;
 
 function backupApiConfigurada() {
@@ -1793,7 +1794,7 @@ async function salvarBackupOnline(silencioso=false) {
 function agendarBackupOnline() {
   if (localStorage.getItem('anotaaiAutoSync') === 'false' || !backupApiConfigurada() || !localStorage.getItem('anotaaiBackupCode')) return;
   clearTimeout(timerBackupOnline);
-  timerBackupOnline = setTimeout(() => salvarBackupOnline(true), 1800);
+  timerBackupOnline = setTimeout(() => sincronizarAgora(true), 1800);
 }
 
 function copiarCodigoBackup() {
@@ -1938,8 +1939,43 @@ function iniciarAgendamentoBackups(){
 async function sincronizarAgora(silencioso=false){
   const code=localStorage.getItem('anotaaiBackupCode');
   if(!code){if(!silencioso)alert('Crie ou restaure um backup online primeiro.');return false;}
-  const status=document.getElementById('backupStatus');if(status)status.textContent='Sincronizando dados...';
-  try{const resposta=await chamarApiBackup('restore',code);const resumo=mesclarBackup(resposta.data);localStorage.setItem('cvdb',JSON.stringify(db));const enviou=await salvarBackupOnline(true);if(!enviou)throw new Error('Não foi possível enviar os dados mesclados.');localStorage.setItem('anotaaiUltimaSync',new Date().toISOString());if(!silencioso){alert(`Sincronização concluída!\n\n${resumo.adicionados} novo(s), ${resumo.atualizados} atualizado(s) e ${resumo.excluidos} excluído(s).`);mais();}return true;}catch(erro){if(status)status.textContent='Sincronização pendente: '+erro.message;if(!silencioso)alert(erro.message);return false;}
+
+  // Evita duas sincronizações concorrentes (ex.: autosync + botão manual).
+  // Quem chegar durante uma sincronização aguarda a mesma operação terminar.
+  if(sincronizacaoOnlineEmAndamento)return await sincronizacaoOnlineEmAndamento;
+
+  const status=document.getElementById('backupStatus');
+  if(status)status.textContent='Sincronizando dados...';
+
+  sincronizacaoOnlineEmAndamento=(async()=>{
+    try{
+      // 1) Baixa o estado mais recente do servidor.
+      const resposta=await chamarApiBackup('restore',code);
+
+      // 2) Mescla remoto + local respeitando atualizadoEm/editadoEm/data e exclusões.
+      const resumo=mesclarBackup(resposta.data);
+      localStorage.setItem('cvdb',JSON.stringify(db));
+
+      // 3) Só depois envia ao servidor o banco já consolidado.
+      const enviou=await salvarBackupOnline(true);
+      if(!enviou)throw new Error('Não foi possível enviar os dados mesclados.');
+
+      localStorage.setItem('anotaaiUltimaSync',new Date().toISOString());
+      if(!silencioso){
+        alert(`Sincronização concluída!\n\n${resumo.adicionados} novo(s), ${resumo.atualizados} atualizado(s) e ${resumo.excluidos} excluído(s).`);
+        mais();
+      }
+      return true;
+    }catch(erro){
+      if(status)status.textContent='Sincronização pendente: '+erro.message;
+      if(!silencioso)alert(erro.message);
+      return false;
+    }finally{
+      sincronizacaoOnlineEmAndamento=null;
+    }
+  })();
+
+  return await sincronizacaoOnlineEmAndamento;
 }
 
 function exportarBackupArquivo() {
@@ -2105,7 +2141,22 @@ async function sincronizarDiariaPeloPopup(){
   fecharModal('modalSyncDiaria');
   await sincronizarAgora();
 }
-async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(mostrarSincronizacaoDiaria,450);}
+function mostrarAvisoCorrecaoSincronizacao() {
+  const chaveAviso = 'anotaaiAvisoSyncCorrigidaV1';
+  if (localStorage.getItem(chaveAviso) === '1') return false;
+
+  // Marca como visto ao exibir para garantir que este aviso apareça uma única vez.
+  localStorage.setItem(chaveAviso, '1');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalAvisoAtualizacaoSync';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>✅ Atualização de correção</h3><p class="muted">Sincronização mais segura</p></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><p>Corrigimos a sincronização automática.</p><p>Agora, antes de enviar as informações, o AnotaAí baixa os dados do backup, combina as alterações e só então salva a versão atualizada.</p><p class="muted">Nenhuma ação é necessária. A correção já está ativa nesta versão.</p><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  document.body.appendChild(modal);
+  return true;
+}
+
+async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(()=>{if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();},450);}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
 async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
