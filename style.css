@@ -81,3 +81,5 @@ html[data-theme="dark"] .fab-sale{box-shadow:0 8px 26px rgba(0,0,0,.5)}
 .status.not-sent{background:#fff0e3;color:#b45b11;margin-left:5px}
 html[data-theme="dark"] .status.sent{background:#17392b;color:#8ce6b7}
 html[data-theme="dark"] .status.not-sent{background:#432b1b;color:#ffc18f}
+
+.update-list{margin:10px 0 18px}.update-list p{margin:10px 0}.update-footer{margin:0 0 18px;padding-top:12px;border-top:1px solid #e5e9ef;color:#8b93a1;font-size:12px;line-height:1.45}[data-theme="dark"] .update-footer{border-color:#344055;color:#909baa}
