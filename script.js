@@ -124,7 +124,7 @@ function home() {
   const cobrancas = clientesParaCobrarHoje();
   const estoque = produtosEstoqueBaixo();
   shell(db.config.usuarioNome ? `Olá, ${escapeHtml(db.config.usuarioNome)}!` : 'Visão geral', `
-    ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Abra a central para iniciar as cobranças.</p></div><button class="btn" onclick="abrirNotificacoes()">Ver cobranças</button></section>` : ''}
+    ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
     <section class="card"><div class="toolbar"><h2>Resumo geral</h2><span class="muted">${new Date().toLocaleDateString('pt-BR')}</span></div><div class="summary"><div>Total em aberto<strong>${money(totalAberto())}</strong></div><div>Vendas hoje<strong>${money(vendasHoje)}</strong></div><div>Clientes<strong>${db.clientes.length}</strong></div></div></section>
     <section class="grid"><button class="action green" onclick="novaVenda()"><b>🛒 Nova Venda</b><span>Registrar compra de um cliente</span></button><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Clientes, cobranças e pagamentos</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos, estoque e reposição</span></button><button class="action yellow" onclick="relatorios()"><b>📊 Relatórios</b><span>Consultar vendas por período</span></button></section>
     ${estoque.length ? `<section class="card"><h3>⚠️ Estoque baixo</h3><div class="list">${estoque.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')}</div></section>`:''}
@@ -141,7 +141,7 @@ function abrirNotificacoes() {
   const cs = clientesParaCobrarHoje(), es = produtosEstoqueBaixo();
   const modal = document.createElement('div'); modal.className='modal-backdrop'; modal.id='modalAvisos';
   modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>🔔 Notificações</h3><p class="muted">Pendências de hoje</p></div><button class="modal-close" onclick="fecharModal('modalAvisos')">×</button></div>
-    <h4>💰 Cobranças</h4><div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
+    <h4>💰 Cobranças</h4>${cs.length?`<button class="btn whatsapp-btn queue-start-btn" onclick="fecharModal('modalAvisos');iniciarFilaCobranca(${JSON.stringify(cs.map(c=>c.id))})">💬 Iniciar fila de ${cs.length} cobrança(s)</button>`:''}<div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
     <h4>📦 Estoque baixo</h4><div class="list">${es.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')||'<div class="empty">Nenhum alerta de estoque.</div>'}</div></div>`;
   document.body.appendChild(modal);
 }
@@ -390,9 +390,40 @@ function enviarMensagem(id) {
   if (document.querySelector('#listaClientesCadastro')) clientes();
 }
 let filaCobranca=[], filaIndex=0;
-function iniciarFilaCobranca(ids) { filaCobranca=ids; filaIndex=0; mostrarFila(); }
-function mostrarFila() { const id=filaCobranca[filaIndex]; if(!id){alert('Fila de cobranças concluída.');clientes();return;} const c=cliente(id); const modal=document.createElement('div'); modal.id='modalFila'; modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-box"><h3>Cobrança ${filaIndex+1} de ${filaCobranca.length}</h3><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p><button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">Abrir WhatsApp</button> <button class="btn" onclick="confirmarFila(${id})">Marcar enviada e próxima</button><button class="btn secondary" onclick="fecharModal('modalFila')">Fechar</button></div>`; document.body.appendChild(modal); }
-function confirmarFila(id) { const agora=new Date().toISOString(); db.cobrancas.push({id:Date.now(),clienteId:id,data:agora,valor:saldoCliente(id),atualizadoEm:agora}); save(); fecharModal('modalFila'); filaIndex++; mostrarFila(); }
+function iniciarFilaCobrancasPendentes() {
+  const ids = clientesParaCobrarHoje().map(c => c.id);
+  if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
+  iniciarFilaCobranca(ids);
+}
+function iniciarFilaCobranca(ids) {
+  filaCobranca = [...new Set((ids || []).map(Number))].filter(id => cliente(id) && saldoCliente(id) > 0);
+  filaIndex = 0;
+  if (!filaCobranca.length) return alert('Nenhum cliente com saldo em aberto foi encontrado.');
+  fecharModal('modalFila');
+  mostrarFila();
+}
+function mostrarFila() {
+  fecharModal('modalFila');
+  const id = filaCobranca[filaIndex];
+  if (!id) {
+    alert('Fila de cobranças concluída.');
+    if (document.querySelector('#listaClientesCadastro')) clientes(); else home();
+    return;
+  }
+  const c = cliente(id);
+  if (!c || saldoCliente(id) <= 0) { filaIndex++; return mostrarFila(); }
+  const temTelefone = !!String(c.telefone || '').replace(/\D/g, '');
+  const modal=document.createElement('div');
+  modal.id='modalFila'; modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal-box queue-modal"><div class="toolbar"><div><h3>💬 Fila de cobranças</h3><p class="muted">Cobrança ${filaIndex+1} de ${filaCobranca.length}</p></div><button class="modal-close" onclick="fecharModal('modalFila')">×</button></div><div class="queue-progress"><span style="width:${Math.round(((filaIndex+1)/filaCobranca.length)*100)}%"></span></div><div class="queue-client"><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p>${temTelefone?`<p class="muted">WhatsApp: ${escapeHtml(c.telefone)}</p>`:'<p class="queue-warning">⚠️ Este cliente não possui telefone cadastrado.</p>'}</div><div class="queue-actions">${temTelefone?`<button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">💬 Abrir WhatsApp</button><button class="btn" onclick="confirmarFila(${id})">✅ Marcar enviada e próxima</button><button class="btn secondary" onclick="proximaFila()">Próxima sem marcar</button>`:`<button class="btn secondary" onclick="proximaFila()">Pular cliente</button>`}</div></div>`;
+  document.body.appendChild(modal);
+}
+function confirmarFila(id) {
+  registrarMensagemEnviada(id);
+  filaIndex++;
+  mostrarFila();
+}
+function proximaFila() { filaIndex++; mostrarFila(); }
 
 // --------------------------- PRODUTOS ------------------------------
 function produtos() {
@@ -2159,7 +2190,7 @@ async function sincronizarDiariaPeloPopup(){
   await sincronizarAgora();
 }
 function mostrarAvisoCorrecaoSincronizacao() {
-  const chaveAviso = 'anotaaiAvisoAtualizacoesV2';
+  const chaveAviso = 'anotaaiAvisoAtualizacoesV3';
   if (localStorage.getItem(chaveAviso) === '1') return false;
 
   // Marca como visto ao exibir para garantir que este aviso apareça uma única vez.
@@ -2168,7 +2199,7 @@ function mostrarAvisoCorrecaoSincronizacao() {
   const modal = document.createElement('div');
   modal.id = 'modalAvisoAtualizacaoSync';
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Correção no backup</p><p>✅ Correção de função</p><p>✅ Correção de bug na edição de vendas</p></div><div class="update-footer">Nenhuma ação é necessária. A correção já está ativa nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Correção no backup</p><p>✅ Correção de função</p><p>✅ Correção de bug na edição de vendas</p><p>✅ Cobranças agora podem ser feitas em fila</p></div><div class="update-footer">Nenhuma ação é necessária. A correção já está ativa nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
 }
