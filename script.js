@@ -20,7 +20,7 @@ function toggleTheme(dark) {
 const emptyDB = () => ({
   clientes: [], produtos: [], vendas: [], pagamentos: [],
   movimentacoesEstoque: [], cobrancas: [],
-  config: { usuarioNome: '', pixChave: '', pixNome: '', incluirPix: true }
+  config: { usuarioNome: '', pixChave: '', pixNome: '', incluirPix: true, atualizadoEm: '' }
 });
 let db;
 try { db = JSON.parse(localStorage.getItem('cvdb')) || emptyDB(); }
@@ -29,12 +29,13 @@ catch { db = emptyDB(); }
 db.clientes ||= []; db.produtos ||= []; db.vendas ||= []; db.pagamentos ||= [];
 db.movimentacoesEstoque ||= []; db.cobrancas ||= [];
 db.exclusoes ||= [];
-db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true };
+db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true, atualizadoEm:'' };
 // Garante os novos campos sem apagar configurações salvas em versões anteriores.
 db.config.usuarioNome ??= '';
 db.config.pixChave ??= '';
 db.config.pixNome ??= '';
 db.config.incluirPix ??= true;
+db.config.atualizadoEm ??= '';
 function save() {
   localStorage.setItem('cvdb', JSON.stringify(db));
   agendarBackupOnline();
@@ -329,7 +330,7 @@ function montarMensagem(id) {
   const c=cliente(id), compras=db.vendas.filter(v=>v.clienteId==id).sort((a,b)=>new Date(a.data)-new Date(b.data));
   const detalhes=compras.length?compras.map(v=>{const d=new Date(v.data); const itens=v.itens.map(i=>`${i.quantidade}x ${i.nome} (${money(i.subtotal)})`).join(', '); return `• ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} - ${itens} = ${money(v.total)}`;}).join('\n'):'Nenhuma compra registrada.';
   let msg=`Olá, ${c.nome}! Tudo bem? Segue o detalhamento das suas compras:\n\n${detalhes}\n\n💰 Total em aberto: ${money(saldoCliente(id))}.`;
-  if(db.config.incluirPix && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
+  if(db.config.incluirPix !== false && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
   return msg;
 }
 // Monta e abre o link do WhatsApp. Retorna false quando não for possível abrir.
@@ -1903,7 +1904,30 @@ function mesclarBackup(pacote) {
     });
     db.exclusoes.filter(x=>x.tipo===chave).forEach(x=>{const antes=db[chave].length;db[chave]=db[chave].filter(item=>String(item.id)!==String(x.id)||registroTempo(item)>new Date(x.excluidoEm).getTime());excluidos+=antes-db[chave].length;});
   });
-  if (localVazio && remoto.config) db.config = {...db.config, ...remoto.config};
+  // As configurações do usuário (nome e PIX) também fazem parte do backup.
+  // Antes elas só eram restauradas quando TODO o banco local estava vazio. Isso
+  // fazia clientes/vendas sincronizarem normalmente, mas deixava o PIX de fora.
+  if (remoto.config && typeof remoto.config === 'object') {
+    const configLocal = db.config || {};
+    const configRemota = remoto.config || {};
+    const tempoLocal = new Date(configLocal.atualizadoEm || 0).getTime() || 0;
+    const tempoRemoto = new Date(configRemota.atualizadoEm || 0).getTime() || 0;
+
+    if (tempoRemoto > tempoLocal) {
+      db.config = {...configLocal, ...configRemota};
+    } else {
+      // Compatibilidade com backups antigos, que não possuíam atualizadoEm:
+      // completa apenas campos locais vazios, sem apagar uma configuração válida.
+      db.config = {
+        ...configLocal,
+        usuarioNome: configLocal.usuarioNome || configRemota.usuarioNome || '',
+        pixChave: configLocal.pixChave || configRemota.pixChave || '',
+        pixNome: configLocal.pixNome || configRemota.pixNome || '',
+        incluirPix: configLocal.incluirPix ?? configRemota.incluirPix ?? true,
+        atualizadoEm: configLocal.atualizadoEm || configRemota.atualizadoEm || ''
+      };
+    }
+  }
   return {adicionados, existentes, atualizados, excluidos};
 }
 
@@ -2068,6 +2092,7 @@ function salvarUsuario() {
   db.config.pixNome = pixNome.value.trim();
   db.config.pixChave = pixChave.value.trim();
   db.config.incluirPix = pixIncluir.checked;
+  db.config.atualizadoEm = new Date().toISOString();
   const novaChaveBackup = backupCodeUsuario.value.trim().replace(/\s+/g,'').toUpperCase();
   if(novaChaveBackup && !/^[A-F0-9]{48}$/.test(novaChaveBackup)) return alert('A chave de backup deve ter 48 caracteres hexadecimais.');
   if(novaChaveBackup) localStorage.setItem('anotaaiBackupCode',novaChaveBackup);
