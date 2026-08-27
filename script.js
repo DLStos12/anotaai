@@ -2291,7 +2291,16 @@ function mostrarAvisoCorrecaoSincronizacao() {
   const modal = document.createElement('div');
   modal.id = 'modalAvisoAtualizacaoSync';
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p><p>✅ Novo controle para liberar dispositivos pelo painel administrativo</p><p>✅ Agora é possível personalizar a mensagem de cobrança</p><p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p></div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div>
+
+  <h3>🚀 Novidades nesta atualização</h3>
+
+  </div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list">
+
+  <p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p>
+  <p>✅ Mensagens de cobrança personalizadas</p>
+  
+  </div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
 }
