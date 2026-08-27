@@ -202,7 +202,7 @@ function clientes() {
     <div id="listaClientesCadastro" class="list">${htmlListaClientes(db.clientes)}</div>`, 'mais');
 }
 function htmlListaClientes(lista) {
-  return lista.map(c=>`<div class="client-card"><div class="client-head"><label class="client-select"><input class="cliente-check" type="checkbox" value="${c.id}" onchange="atualizarBulk()"></label><div class="client-info"><b>${escapeHtml(c.nome)}</b><div class="client-observation">${c.observacao?`📝 ${escapeHtml(c.observacao)}`:'<span class="muted">Sem observação</span>'}</div><div class="muted">${escapeHtml(c.telefone||'Sem telefone')} ${c.cobrancaAtiva?`· cobrança ${formatarCobranca(c)}`:''}</div><div>${statusCliente(c)}</div></div><button class="btn secondary" onclick="formCliente(${c.id})">Editar</button></div><div class="client-actions"><button class="btn payment-btn" onclick="registrarPagamento(${c.id})">💰 Pagamento</button><button class="btn whatsapp-btn" onclick="enviarMensagem(${c.id})">💬 Enviar mensagem</button><button class="btn danger" onclick="excluirCliente(${c.id})">🗑 Excluir</button></div></div>`).join('') || '<div class="empty">Nenhum cliente encontrado.</div>';
+  return lista.map(c=>`<div class="client-card"><div class="client-head"><label class="client-select"><input class="cliente-check" type="checkbox" value="${c.id}" onchange="atualizarBulk()"></label><div class="client-info"><b>${escapeHtml(c.nome)}</b><div class="client-balance">Saldo devedor: <strong>${money(saldoCliente(c.id))}</strong></div><div class="client-observation">${c.observacao?`📝 ${escapeHtml(c.observacao)}`:'<span class="muted">Sem observação</span>'}</div><div class="muted">${escapeHtml(c.telefone||'Sem telefone')} ${c.cobrancaAtiva?`· cobrança ${formatarCobranca(c)}`:''}</div><div>${statusCliente(c)}</div></div><button class="btn secondary" onclick="formCliente(${c.id})">Editar</button></div><div class="client-actions"><button class="btn payment-btn" onclick="registrarPagamento(${c.id})">💰 Pagamento</button><button class="btn whatsapp-btn" onclick="enviarMensagem(${c.id})">💬 Enviar mensagem</button><button class="btn danger" onclick="excluirCliente(${c.id})">🗑 Excluir</button></div></div>`).join('') || '<div class="empty">Nenhum cliente encontrado.</div>';
 }
 function filtrarListaClientes() { const termo=document.querySelector('#buscaClientes').value.trim().toLowerCase(); document.querySelector('#listaClientesCadastro').innerHTML=htmlListaClientes(db.clientes.filter(c=>c.nome.toLowerCase().includes(termo))); atualizarBulk(); }
 function selecionados() { return [...document.querySelectorAll('.cliente-check:checked')].map(x=>Number(x.value)); }
@@ -1297,7 +1297,24 @@ function salvarVenda() {
     vendas();
 }
 
-function vendas() { shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div><div class="list">${db.vendas.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')} · <strong>${(v.pagamento||'prazo')==='avista'?'À vista':'A prazo'}</strong></div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('')||'<div class="empty">Nenhuma venda.</div>'}</div>`, 'vendas'); }
+function htmlListaVendas(lista) {
+  return lista.slice().reverse().map(v=>`<div class="sale-card"><div class="sale-card-main"><div><b>${escapeHtml(cliente(v.clienteId).nome)}</b><div class="muted">${dt(v.data)} · ${v.itens.map(i=>i.quantidade+'x '+escapeHtml(i.nome)).join(', ')} · <strong>${(v.pagamento||'prazo')==='avista'?'À vista':'A prazo'}</strong></div>${v.observacao?`<div class="muted">Obs.: ${escapeHtml(v.observacao)}</div>`:''}</div><span class="price">${money(v.total)}</span></div><div class="sale-card-actions"><button class="btn secondary" onclick="editarVenda(${v.id})">✏️ Editar venda</button></div></div>`).join('') || '<div class="empty">Nenhuma venda encontrada.</div>';
+}
+
+function vendas() {
+  shell('Vendas', `<div class="toolbar"><h2>Vendas</h2><button class="btn" onclick="novaVenda()">+ Nova venda</button></div>
+    <section class="card client-search-card"><div class="field client-search-field"><label>Buscar vendas por cliente</label><input id="buscaVendasCliente" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarVendasPorCliente()"></div></section>
+    <div id="listaVendas" class="list">${htmlListaVendas(db.vendas)}</div>`, 'vendas');
+}
+
+function filtrarVendasPorCliente() {
+  const termo = document.querySelector('#buscaVendasCliente')?.value.trim().toLocaleLowerCase('pt-BR') || '';
+  const vendasFiltradas = termo
+    ? db.vendas.filter(v => cliente(v.clienteId).nome.toLocaleLowerCase('pt-BR').includes(termo))
+    : db.vendas;
+  const lista = document.querySelector('#listaVendas');
+  if (lista) lista.innerHTML = htmlListaVendas(vendasFiltradas);
+}
 
 function editarVenda(id) {
     const v = db.vendas.find(x => x.id == id);
@@ -2292,7 +2309,11 @@ function mostrarAvisoCorrecaoSincronizacao() {
   const modal = document.createElement('div');
   modal.id = 'modalAvisoAtualizacaoSync';
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p><p>✅ Novo controle para liberar dispositivos pelo painel administrativo</p><p>✅ Agora é possível personalizar a mensagem de cobrança</p><p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p></div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p><p>✅ Novo controle para liberar dispositivos pelo painel administrativo</p><p>✅ Agora é possível personalizar a mensagem de cobrança</p>
+  <p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p>
+  <p>✅ Barra de pesquisa na Aba vendas</p>
+  <p>✅ Saldo devedor agora aparece na aba clientes</p>
+  </div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
 }
