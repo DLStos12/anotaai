@@ -128,7 +128,6 @@ function home() {
   const estoque = produtosEstoqueBaixo();
   shell(db.config.usuarioNome ? `Olá, ${escapeHtml(db.config.usuarioNome)}!` : 'Visão geral', `
     ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
-    ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
     <section class="card"><div class="toolbar"><h2>Resumo geral</h2><span class="muted">${new Date().toLocaleDateString('pt-BR')}</span></div><div class="summary"><div>Total em aberto<strong>${money(totalAberto())}</strong></div><div>Vendas hoje<strong>${money(vendasHoje)}</strong></div><div>Clientes<strong>${db.clientes.length}</strong></div></div></section>
     <section class="grid"><button class="action green" onclick="novaVenda()"><b>🛒 Nova Venda</b><span>Registrar compra de um cliente</span></button><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Clientes, cobranças e pagamentos</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos, estoque e reposição</span></button><button class="action yellow" onclick="relatorios()"><b>📊 Relatórios</b><span>Consultar vendas por período</span></button></section>
     ${estoque.length ? `<section class="card"><h3>⚠️ Estoque baixo</h3><div class="list">${estoque.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')}</div></section>`:''}
@@ -145,7 +144,6 @@ function abrirNotificacoes() {
   const cs = clientesParaCobrarHoje(), es = produtosEstoqueBaixo();
   const modal = document.createElement('div'); modal.className='modal-backdrop'; modal.id='modalAvisos';
   modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>🔔 Notificações</h3><p class="muted">Pendências de hoje</p></div><button class="modal-close" onclick="fecharModal('modalAvisos')">×</button></div>
-    <h4>💰 Cobranças</h4>${cs.length?`<button class="btn whatsapp-btn queue-start-btn" onclick="fecharModal('modalAvisos');iniciarFilaCobranca(${JSON.stringify(cs.map(c=>c.id))})">💬 Iniciar fila de ${cs.length} cobrança(s)</button>`:''}<div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
     <h4>💰 Cobranças</h4>${cs.length?`<button class="btn whatsapp-btn queue-start-btn" onclick="fecharModal('modalAvisos');iniciarFilaCobranca(${JSON.stringify(cs.map(c=>c.id))})">💬 Iniciar fila de ${cs.length} cobrança(s)</button>`:''}<div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
     <h4>📦 Estoque baixo</h4><div class="list">${es.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')||'<div class="empty">Nenhum alerta de estoque.</div>'}</div></div>`;
   document.body.appendChild(modal);
@@ -343,7 +341,6 @@ function montarMensagem(id) {
 
   let msg=`Olá, ${c.nome}! Tudo bem? Segue o detalhamento das suas compras:\n\n${detalhes}\n\n💰 Total em aberto: ${money(saldoCliente(id))}.`;
   if(db.config.incluirPix !== false && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
-  if(db.config.incluirPix !== false && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
   return msg;
 }
 // Monta e abre o link do WhatsApp. Retorna false quando não for possível abrir.
@@ -404,40 +401,6 @@ function enviarMensagem(id) {
   if (document.querySelector('#listaClientesCadastro')) clientes();
 }
 let filaCobranca=[], filaIndex=0;
-function iniciarFilaCobrancasPendentes() {
-  const ids = clientesParaCobrarHoje().map(c => c.id);
-  if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
-  iniciarFilaCobranca(ids);
-}
-function iniciarFilaCobranca(ids) {
-  filaCobranca = [...new Set((ids || []).map(Number))].filter(id => cliente(id) && saldoCliente(id) > 0);
-  filaIndex = 0;
-  if (!filaCobranca.length) return alert('Nenhum cliente com saldo em aberto foi encontrado.');
-  fecharModal('modalFila');
-  mostrarFila();
-}
-function mostrarFila() {
-  fecharModal('modalFila');
-  const id = filaCobranca[filaIndex];
-  if (!id) {
-    alert('Fila de cobranças concluída.');
-    if (document.querySelector('#listaClientesCadastro')) clientes(); else home();
-    return;
-  }
-  const c = cliente(id);
-  if (!c || saldoCliente(id) <= 0) { filaIndex++; return mostrarFila(); }
-  const temTelefone = !!String(c.telefone || '').replace(/\D/g, '');
-  const modal=document.createElement('div');
-  modal.id='modalFila'; modal.className='modal-backdrop';
-  modal.innerHTML=`<div class="modal-box queue-modal"><div class="toolbar"><div><h3>💬 Fila de cobranças</h3><p class="muted">Cobrança ${filaIndex+1} de ${filaCobranca.length}</p></div><button class="modal-close" onclick="fecharModal('modalFila')">×</button></div><div class="queue-progress"><span style="width:${Math.round(((filaIndex+1)/filaCobranca.length)*100)}%"></span></div><div class="queue-client"><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p>${temTelefone?`<p class="muted">WhatsApp: ${escapeHtml(c.telefone)}</p>`:'<p class="queue-warning">⚠️ Este cliente não possui telefone cadastrado.</p>'}</div><div class="queue-actions">${temTelefone?`<button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">💬 Abrir WhatsApp</button><button class="btn" onclick="confirmarFila(${id})">✅ Marcar enviada e próxima</button><button class="btn secondary" onclick="proximaFila()">Próxima sem marcar</button>`:`<button class="btn secondary" onclick="proximaFila()">Pular cliente</button>`}</div></div>`;
-  document.body.appendChild(modal);
-}
-function confirmarFila(id) {
-  registrarMensagemEnviada(id);
-  filaIndex++;
-  mostrarFila();
-}
-function proximaFila() { filaIndex++; mostrarFila(); }
 function iniciarFilaCobrancasPendentes() {
   const ids = clientesParaCobrarHoje().map(c => c.id);
   if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
@@ -2258,12 +2221,45 @@ async function instalarApp() {
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
 
 // --------------------------- LICENÇA ------------------------------
+const DEVICE_ID_KEY = 'anotaaiDeviceId';
+const DEVICE_ID_COOKIE = 'anotaaiDeviceId';
+
+function lerIdDispositivoCookie() {
+  try {
+    const item = document.cookie.split('; ').find(parte => parte.startsWith(DEVICE_ID_COOKIE + '='));
+    return item ? decodeURIComponent(item.slice(DEVICE_ID_COOKIE.length + 1)) : '';
+  } catch {
+    return '';
+  }
+}
+
+function salvarIdDispositivo(id) {
+  try { localStorage.setItem(DEVICE_ID_KEY, id); } catch {}
+  try { sessionStorage.setItem(DEVICE_ID_KEY, id); } catch {}
+  try {
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${DEVICE_ID_COOKIE}=${encodeURIComponent(id)}; Path=/; Max-Age=315360000; SameSite=Lax${secure}`;
+  } catch {}
+}
+
 function obterIdDispositivo() {
-  let id = localStorage.getItem('anotaaiDeviceId');
-  if (id) return id;
+  let id = '';
+  try { id = localStorage.getItem(DEVICE_ID_KEY) || ''; } catch {}
+  if (!id) id = lerIdDispositivoCookie();
+  if (!id) {
+    try { id = sessionStorage.getItem(DEVICE_ID_KEY) || ''; } catch {}
+  }
+
+  // Se encontramos o identificador em qualquer armazenamento, replica nos demais.
+  // Assim um simples F5/reabertura não cria uma nova vaga de licença.
+  if (id) {
+    salvarIdDispositivo(id);
+    return id;
+  }
+
   if (window.crypto?.randomUUID) id = window.crypto.randomUUID();
   else id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  localStorage.setItem('anotaaiDeviceId', id);
+  salvarIdDispositivo(id);
   return id;
 }
 const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -2302,6 +2298,6 @@ function mostrarAvisoCorrecaoSincronizacao() {
 
 async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(()=>{if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();},450);}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
-async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==false)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
+async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
 iniciarComLicenca();
