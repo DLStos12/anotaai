@@ -1781,6 +1781,7 @@ function mais() {
     <p class="muted backup-status" id="backupStatus">${ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : (ultimoBackup ? `Último backup online: ${new Date(ultimoBackup).toLocaleString('pt-BR')}` : 'Nenhum backup online realizado neste aparelho.')}</p>
   </section>
   <section class="card license-card"><h3>🔑 Licença</h3><p class="muted">${licenca ? `Licença ativa neste aparelho · final ${escapeHtml(licenca.slice(-4))}` : 'Nenhuma licença ativada.'}</p><button class="btn secondary" onclick="trocarLicenca()">Trocar licença</button></section>
+  <section class="card support-card"><h3>💬 Suporte</h3><p class="muted">Precisa de ajuda com o AnotaAí? Fale diretamente com o suporte pelo WhatsApp.</p><button class="btn whatsapp-btn" onclick="window.open('https://wa.me/5512988384166','_blank','noopener')">💬 Falar com o suporte</button></section>
   <section class="card"><h3>Dados locais</h3><p class="muted">Os dados também ficam salvos neste aparelho e navegador.</p><button class="btn danger" onclick="abrirLimpeza()">Limpar dados locais</button></section>`, 'mais');
 }
 
@@ -2291,16 +2292,7 @@ function mostrarAvisoCorrecaoSincronizacao() {
   const modal = document.createElement('div');
   modal.id = 'modalAvisoAtualizacaoSync';
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div>
-
-  <h3>🚀 Novidades nesta atualização</h3>
-
-  </div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list">
-
-  <p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p>
-  <p>✅ Mensagens de cobrança personalizadas</p>
-  
-  </div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p><p>✅ Novo controle para liberar dispositivos pelo painel administrativo</p><p>✅ Agora é possível personalizar a mensagem de cobrança</p><p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p></div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
 }
