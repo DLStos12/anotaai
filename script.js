@@ -1834,14 +1834,29 @@ function pacoteBackup() {
 
 async function chamarApiBackup(action, code, data) {
   if (!backupApiConfigurada()) throw new Error('Configure a URL da API no arquivo backup-config.js antes de publicar.');
+
+  const publishableKey = String(window.ANOTAAI_SUPABASE_KEY || '').trim();
+  if (!publishableKey) throw new Error('Configure a Publishable Key do Supabase no arquivo backup-config.js.');
+
   const resposta = await fetch(window.ANOTAAI_BACKUP_API, {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({action, code, data, license: localStorage.getItem('anotaaiLicenseCode') || '', deviceId: obterIdDispositivo()})
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': publishableKey
+    },
+    body: JSON.stringify({
+      action,
+      code,
+      data,
+      license: localStorage.getItem('anotaaiLicenseCode') || '',
+      deviceId: obterIdDispositivo()
+    })
   });
+
   let json;
   try { json = await resposta.json(); }
-  catch { throw new Error('A hospedagem respondeu em um formato inválido.'); }
+  catch { throw new Error('O servidor de backup respondeu em um formato inválido.'); }
+
   if (!resposta.ok || !json.ok) throw new Error(json.error || 'Não foi possível acessar o backup.');
   return json;
 }
