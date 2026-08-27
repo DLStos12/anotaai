@@ -85,3 +85,6 @@ html[data-theme="dark"] .status.not-sent{background:#432b1b;color:#ffc18f}
 .update-list{margin:10px 0 18px}.update-list p{margin:10px 0}.update-footer{margin:0 0 18px;padding-top:12px;border-top:1px solid #e5e9ef;color:#8b93a1;font-size:12px;line-height:1.45}[data-theme="dark"] .update-footer{border-color:#344055;color:#909baa}
 
 .queue-start-btn{width:100%;margin:0 0 12px}.queue-progress{height:7px;background:#e8edf3;border-radius:999px;overflow:hidden;margin:4px 0 18px}.queue-progress span{display:block;height:100%;background:currentColor;border-radius:999px}.queue-client{padding:4px 0 10px}.queue-client h2{margin-bottom:6px}.queue-actions{display:grid;gap:9px}.queue-warning{padding:10px 12px;border-radius:10px;background:#fff4e5;color:#9b5a00;font-weight:600}[data-theme="dark"] .queue-progress{background:#344055}[data-theme="dark"] .queue-warning{background:#4b391d;color:#ffd28a}
+
+/* ===== Mensagem personalizada de cobrança ===== */
+.custom-charge-message[hidden]{display:none}.custom-charge-message code{background:rgba(127,127,127,.13);padding:2px 5px;border-radius:5px}.custom-charge-message textarea{min-height:145px;resize:vertical}

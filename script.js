@@ -20,7 +20,7 @@ function toggleTheme(dark) {
 const emptyDB = () => ({
   clientes: [], produtos: [], vendas: [], pagamentos: [],
   movimentacoesEstoque: [], cobrancas: [],
-  config: { usuarioNome: '', pixChave: '', pixNome: '', incluirPix: true, atualizadoEm: '' }
+  config: { usuarioNome: '', pixChave: '', pixNome: '', incluirPix: true, personalizarCobranca: false, mensagemCobranca: '', atualizadoEm: '' }
 });
 let db;
 try { db = JSON.parse(localStorage.getItem('cvdb')) || emptyDB(); }
@@ -29,12 +29,14 @@ catch { db = emptyDB(); }
 db.clientes ||= []; db.produtos ||= []; db.vendas ||= []; db.pagamentos ||= [];
 db.movimentacoesEstoque ||= []; db.cobrancas ||= [];
 db.exclusoes ||= [];
-db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true, atualizadoEm:'' };
+db.config ||= { usuarioNome:'', pixChave:'', pixNome:'', incluirPix:true, personalizarCobranca:false, mensagemCobranca:'', atualizadoEm:'' };
 // Garante os novos campos sem apagar configurações salvas em versões anteriores.
 db.config.usuarioNome ??= '';
 db.config.pixChave ??= '';
 db.config.pixNome ??= '';
 db.config.incluirPix ??= true;
+db.config.personalizarCobranca ??= false;
+db.config.mensagemCobranca ??= '';
 db.config.atualizadoEm ??= '';
 function save() {
   localStorage.setItem('cvdb', JSON.stringify(db));
@@ -126,6 +128,7 @@ function home() {
   const estoque = produtosEstoqueBaixo();
   shell(db.config.usuarioNome ? `Olá, ${escapeHtml(db.config.usuarioNome)}!` : 'Visão geral', `
     ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
+    ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
     <section class="card"><div class="toolbar"><h2>Resumo geral</h2><span class="muted">${new Date().toLocaleDateString('pt-BR')}</span></div><div class="summary"><div>Total em aberto<strong>${money(totalAberto())}</strong></div><div>Vendas hoje<strong>${money(vendasHoje)}</strong></div><div>Clientes<strong>${db.clientes.length}</strong></div></div></section>
     <section class="grid"><button class="action green" onclick="novaVenda()"><b>🛒 Nova Venda</b><span>Registrar compra de um cliente</span></button><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Clientes, cobranças e pagamentos</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos, estoque e reposição</span></button><button class="action yellow" onclick="relatorios()"><b>📊 Relatórios</b><span>Consultar vendas por período</span></button></section>
     ${estoque.length ? `<section class="card"><h3>⚠️ Estoque baixo</h3><div class="list">${estoque.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')}</div></section>`:''}
@@ -142,6 +145,7 @@ function abrirNotificacoes() {
   const cs = clientesParaCobrarHoje(), es = produtosEstoqueBaixo();
   const modal = document.createElement('div'); modal.className='modal-backdrop'; modal.id='modalAvisos';
   modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>🔔 Notificações</h3><p class="muted">Pendências de hoje</p></div><button class="modal-close" onclick="fecharModal('modalAvisos')">×</button></div>
+    <h4>💰 Cobranças</h4>${cs.length?`<button class="btn whatsapp-btn queue-start-btn" onclick="fecharModal('modalAvisos');iniciarFilaCobranca(${JSON.stringify(cs.map(c=>c.id))})">💬 Iniciar fila de ${cs.length} cobrança(s)</button>`:''}<div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
     <h4>💰 Cobranças</h4>${cs.length?`<button class="btn whatsapp-btn queue-start-btn" onclick="fecharModal('modalAvisos');iniciarFilaCobranca(${JSON.stringify(cs.map(c=>c.id))})">💬 Iniciar fila de ${cs.length} cobrança(s)</button>`:''}<div class="list">${cs.map(c=>`<div class="item"><div><b>${escapeHtml(c.nome)}</b><div class="muted">Em aberto: ${money(saldoCliente(c.id))}</div><div class="muted">Agendada: ${formatarCobranca(c)}</div></div><button class="btn whatsapp-btn" onclick="fecharModal('modalAvisos');enviarMensagem(${c.id})">Cobrar</button></div>`).join('')||'<div class="empty">Nenhuma cobrança para hoje.</div>'}</div>
     <h4>📦 Estoque baixo</h4><div class="list">${es.map(p=>`<div class="item"><b>${escapeHtml(p.nome)}</b><span>${p.estoque} un.</span></div>`).join('')||'<div class="empty">Nenhum alerta de estoque.</div>'}</div></div>`;
   document.body.appendChild(modal);
@@ -329,7 +333,16 @@ function salvarPagamento(id) { const valor=Number(pagvalor.value),agora=new Date
 function montarMensagem(id) {
   const c=cliente(id), compras=db.vendas.filter(v=>v.clienteId==id).sort((a,b)=>new Date(a.data)-new Date(b.data));
   const detalhes=compras.length?compras.map(v=>{const d=new Date(v.data); const itens=v.itens.map(i=>`${i.quantidade}x ${i.nome} (${money(i.subtotal)})`).join(', '); return `• ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} - ${itens} = ${money(v.total)}`;}).join('\n'):'Nenhuma compra registrada.';
+
+  if (db.config.personalizarCobranca && String(db.config.mensagemCobranca || '').trim()) {
+    return String(db.config.mensagemCobranca)
+      .replaceAll('{pixChave}', db.config.pixChave || '')
+      .replaceAll('{pixNome}', db.config.pixNome || '')
+      .replaceAll('{usuarioNome}', db.config.usuarioNome || '');
+  }
+
   let msg=`Olá, ${c.nome}! Tudo bem? Segue o detalhamento das suas compras:\n\n${detalhes}\n\n💰 Total em aberto: ${money(saldoCliente(id))}.`;
+  if(db.config.incluirPix !== false && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
   if(db.config.incluirPix !== false && db.config.pixChave) msg+=`\n\nPagamento via PIX:\nChave: ${db.config.pixChave}${db.config.pixNome?`\nRecebedor: ${db.config.pixNome}`:''}`;
   return msg;
 }
@@ -391,6 +404,40 @@ function enviarMensagem(id) {
   if (document.querySelector('#listaClientesCadastro')) clientes();
 }
 let filaCobranca=[], filaIndex=0;
+function iniciarFilaCobrancasPendentes() {
+  const ids = clientesParaCobrarHoje().map(c => c.id);
+  if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
+  iniciarFilaCobranca(ids);
+}
+function iniciarFilaCobranca(ids) {
+  filaCobranca = [...new Set((ids || []).map(Number))].filter(id => cliente(id) && saldoCliente(id) > 0);
+  filaIndex = 0;
+  if (!filaCobranca.length) return alert('Nenhum cliente com saldo em aberto foi encontrado.');
+  fecharModal('modalFila');
+  mostrarFila();
+}
+function mostrarFila() {
+  fecharModal('modalFila');
+  const id = filaCobranca[filaIndex];
+  if (!id) {
+    alert('Fila de cobranças concluída.');
+    if (document.querySelector('#listaClientesCadastro')) clientes(); else home();
+    return;
+  }
+  const c = cliente(id);
+  if (!c || saldoCliente(id) <= 0) { filaIndex++; return mostrarFila(); }
+  const temTelefone = !!String(c.telefone || '').replace(/\D/g, '');
+  const modal=document.createElement('div');
+  modal.id='modalFila'; modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal-box queue-modal"><div class="toolbar"><div><h3>💬 Fila de cobranças</h3><p class="muted">Cobrança ${filaIndex+1} de ${filaCobranca.length}</p></div><button class="modal-close" onclick="fecharModal('modalFila')">×</button></div><div class="queue-progress"><span style="width:${Math.round(((filaIndex+1)/filaCobranca.length)*100)}%"></span></div><div class="queue-client"><h2>${escapeHtml(c.nome)}</h2><p>Valor em aberto: <b>${money(saldoCliente(id))}</b></p>${temTelefone?`<p class="muted">WhatsApp: ${escapeHtml(c.telefone)}</p>`:'<p class="queue-warning">⚠️ Este cliente não possui telefone cadastrado.</p>'}</div><div class="queue-actions">${temTelefone?`<button class="btn whatsapp-btn" onclick="abrirWhatsApp(${id})">💬 Abrir WhatsApp</button><button class="btn" onclick="confirmarFila(${id})">✅ Marcar enviada e próxima</button><button class="btn secondary" onclick="proximaFila()">Próxima sem marcar</button>`:`<button class="btn secondary" onclick="proximaFila()">Pular cliente</button>`}</div></div>`;
+  document.body.appendChild(modal);
+}
+function confirmarFila(id) {
+  registrarMensagemEnviada(id);
+  filaIndex++;
+  mostrarFila();
+}
+function proximaFila() { filaIndex++; mostrarFila(); }
 function iniciarFilaCobrancasPendentes() {
   const ids = clientesParaCobrarHoje().map(c => c.id);
   if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
@@ -1798,7 +1845,7 @@ function gerarCodigoBackup() {
 function pacoteBackup() {
   return {
     app: 'AnotaAí',
-    versao: 25,
+    versao: 26,
     criadoEm: new Date().toISOString(),
     dados: JSON.parse(JSON.stringify(db))
   };
@@ -1809,7 +1856,7 @@ async function chamarApiBackup(action, code, data) {
   const resposta = await fetch(window.ANOTAAI_BACKUP_API, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({action, code, data, license: localStorage.getItem('anotaaiLicenseCode') || ''})
+    body: JSON.stringify({action, code, data, license: localStorage.getItem('anotaaiLicenseCode') || '', deviceId: obterIdDispositivo()})
   });
   let json;
   try { json = await resposta.json(); }
@@ -1924,6 +1971,8 @@ function mesclarBackup(pacote) {
         pixChave: configLocal.pixChave || configRemota.pixChave || '',
         pixNome: configLocal.pixNome || configRemota.pixNome || '',
         incluirPix: configLocal.incluirPix ?? configRemota.incluirPix ?? true,
+        personalizarCobranca: configLocal.personalizarCobranca ?? configRemota.personalizarCobranca ?? false,
+        mensagemCobranca: configLocal.mensagemCobranca || configRemota.mensagemCobranca || '',
         atualizadoEm: configLocal.atualizadoEm || configRemota.atualizadoEm || ''
       };
     }
@@ -2075,11 +2124,17 @@ async function restaurarBackupArquivo(arquivo) {
 function configUsuario() {
   shell('Usuário', `<section class="card">
     <h3>👤 Perfil</h3>
-    <div class="field"><label>Nome</label><input id="usuarioNome" value="${escapeHtml(db.config.usuarioNome||'')}" placeholder="Ex.: Derick"></div>
+    <div class="field"><label>Nome / nome da loja</label><input id="usuarioNome" value="${escapeHtml(db.config.usuarioNome||'')}" placeholder="Ex.: AnotaAí Doces"></div>
     <h3>💰 Dados para recebimento</h3>
     <div class="field"><label>Nome do recebedor PIX</label><input id="pixNome" value="${escapeHtml(db.config.pixNome||'')}" placeholder="Ex.: Derick Luiz"></div>
     <div class="field"><label>Chave PIX</label><input id="pixChave" value="${escapeHtml(db.config.pixChave||'')}" placeholder="CPF, telefone, e-mail ou chave aleatória"></div>
     <label class="checkline"><input id="pixIncluir" type="checkbox" ${db.config.incluirPix!==false?'checked':''}> Incluir PIX nas mensagens de cobrança</label>
+    <h3>💬 Mensagem de cobrança</h3>
+    <label class="checkline"><input id="personalizarCobranca" type="checkbox" ${db.config.personalizarCobranca?'checked':''} onchange="alternarMensagemCobranca()"> Personalizar mensagem de cobrança</label>
+    <div id="campoMensagemCobranca" class="custom-charge-message" ${db.config.personalizarCobranca?'':'hidden'}>
+      <div class="field"><label>Mensagem personalizada</label><textarea id="mensagemCobranca" rows="7" placeholder="Digite sua mensagem. Onde quiser inserir a chave PIX use {pixChave}, o nome do recebedor use {pixNome} e o nome da loja use {usuarioNome}.">${escapeHtml(db.config.mensagemCobranca||'')}</textarea></div>
+      <p class="muted">Variáveis disponíveis: <code>{pixChave}</code>, <code>{pixNome}</code> e <code>{usuarioNome}</code>.</p>
+    </div>
     <h3>☁️ Chave do backup</h3>
     <div class="field"><label>Código de recuperação</label><input id="backupCodeUsuario" value="${escapeHtml(localStorage.getItem('anotaaiBackupCode')||'')}" autocomplete="off" placeholder="Cole aqui o código de 48 caracteres"></div>
     <p class="muted">Use uma chave já existente para acessar o backup correspondente. Se deixar em branco, a chave deste aparelho será removida.</p>
@@ -2087,11 +2142,19 @@ function configUsuario() {
   </section>`, 'mais');
 }
 
+function alternarMensagemCobranca() {
+  const campo = document.getElementById('campoMensagemCobranca');
+  if (campo) campo.hidden = !document.getElementById('personalizarCobranca')?.checked;
+}
+
 function salvarUsuario() {
   db.config.usuarioNome = usuarioNome.value.trim();
   db.config.pixNome = pixNome.value.trim();
   db.config.pixChave = pixChave.value.trim();
   db.config.incluirPix = pixIncluir.checked;
+  db.config.personalizarCobranca = document.getElementById('personalizarCobranca')?.checked || false;
+  db.config.mensagemCobranca = document.getElementById('mensagemCobranca')?.value.trim() || '';
+  if (db.config.personalizarCobranca && !db.config.mensagemCobranca) return alert('Digite a mensagem de cobrança personalizada ou desmarque a opção de personalização.');
   db.config.atualizadoEm = new Date().toISOString();
   const novaChaveBackup = backupCodeUsuario.value.trim().replace(/\s+/g,'').toUpperCase();
   if(novaChaveBackup && !/^[A-F0-9]{48}$/.test(novaChaveBackup)) return alert('A chave de backup deve ter 48 caracteres hexadecimais.');
@@ -2195,10 +2258,18 @@ async function instalarApp() {
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
 
 // --------------------------- LICENÇA ------------------------------
+function obterIdDispositivo() {
+  let id = localStorage.getItem('anotaaiDeviceId');
+  if (id) return id;
+  if (window.crypto?.randomUUID) id = window.crypto.randomUUID();
+  else id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  localStorage.setItem('anotaaiDeviceId', id);
+  return id;
+}
 const TOLERANCIA_OFFLINE_MS = 3 * 24 * 60 * 60 * 1000;
 function licenseApiConfigurada() { const url=String(window.ANOTAAI_LICENSE_API||'').trim(); return /^https:\/\//i.test(url)&&!url.includes('SEU-DOMINIO'); }
 function telaAtivacao(mensagem='') { const atual=localStorage.getItem('anotaaiLicenseCode')||''; document.querySelector('#app').innerHTML=`<header class="top"><div class="brand-wrap"><img src="logo.png" class="app-logo" alt="Logo AnotaAí"><div class="top-text"><h1>AnotaAí</h1><p>Ativação do aplicativo</p></div></div></header><main class="page activation-page"><section class="card activation-card"><div class="activation-icon">🔑</div><h2>Ative seu AnotaAí</h2><p class="muted">Digite a licença recebida na compra.</p>${mensagem?`<p class="license-message">${escapeHtml(mensagem)}</p>`:''}<div class="field"><label>Chave de licença</label><input id="licenseInput" value="${escapeHtml(atual)}" autocomplete="off" autocapitalize="characters" placeholder="ANOTA-XXXX-XXXX-XXXX-XXXX"></div><button class="btn" onclick="ativarLicenca()">Ativar e continuar</button><p class="muted activation-help">É necessário conectar à internet na primeira ativação.</p></section></main>`; }
-async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
+async function consultarLicenca(code) { if(!licenseApiConfigurada())throw new Error('Configure a URL da licença no arquivo backup-config.js.'); const resposta=await fetch(window.ANOTAAI_LICENSE_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({license:code,deviceId:obterIdDispositivo()})}); let json; try{json=await resposta.json();}catch{throw new Error('Resposta inválida do servidor de licenças.');} if(!resposta.ok||!json.ok){const erro=new Error(json.error||'Licença recusada.');erro.recusa=true;throw erro;}return json; }
 function mostrarSincronizacaoDiaria() {
   const hoje=chaveDataLocal();
   if(localStorage.getItem('anotaaiSyncPopupData')===hoje)return;
@@ -2215,7 +2286,7 @@ async function sincronizarDiariaPeloPopup(){
   await sincronizarAgora();
 }
 function mostrarAvisoCorrecaoSincronizacao() {
-  const chaveAviso = 'anotaaiAvisoAtualizacoesV3';
+  const chaveAviso = 'anotaaiAvisoAtualizacoesV4';
   if (localStorage.getItem(chaveAviso) === '1') return false;
 
   // Marca como visto ao exibir para garantir que este aviso apareça uma única vez.
@@ -2224,13 +2295,13 @@ function mostrarAvisoCorrecaoSincronizacao() {
   const modal = document.createElement('div');
   modal.id = 'modalAvisoAtualizacaoSync';
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Correção no backup</p><p>✅ Correção de função</p><p>✅ Correção de bug na edição de vendas</p><p>✅ Cobranças agora podem ser feitas em fila</p></div><div class="update-footer">Nenhuma ação é necessária. A correção já está ativa nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
+  modal.innerHTML = `<div class="modal-box"><div class="toolbar"><div><h3>Atualizações no sistema ✅</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">×</button></div><div class="update-list"><p>✅ Cada licença agora pode ser usada em até 2 dispositivos</p><p>✅ Novo controle para liberar dispositivos pelo painel administrativo</p><p>✅ Agora é possível personalizar a mensagem de cobrança</p><p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p></div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
 }
 
 async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(()=>{if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();},450);}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
-async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
+async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==false)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
 iniciarComLicenca();

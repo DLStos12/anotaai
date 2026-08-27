@@ -47,3 +47,11 @@ REGRAS
 - A chave de backup continua separada da licença e permite mesclar aparelhos.
 - O backup.php agora exige uma licença ativa em todas as operações.
 - Não apague private-backups ao atualizar a API.
+
+
+ATUALIZAÇÃO - LIMITE DE DISPOSITIVOS
+- Cada licença pode ser utilizada em até 2 dispositivos.
+- O vínculo é criado automaticamente na primeira validação de cada aparelho/navegador.
+- O painel administrativo mostra a quantidade de dispositivos usados (0/2, 1/2 ou 2/2).
+- O botão 'Liberar dispositivos' zera os vínculos da licença para permitir troca de aparelho.
+- Limpar os dados do navegador pode gerar um novo identificador de dispositivo; nesse caso, use o painel para liberar os vínculos se necessário.
