@@ -2314,6 +2314,39 @@ async function sincronizarDiariaPeloPopup(){
   fecharModal('modalSyncDiaria');
   await sincronizarAgora();
 }
+function avisoAdminApiConfigurada(){
+  const url=String(window.ANOTAAI_NOTICE_API||'').trim();
+  return /^https:\/\//i.test(url);
+}
+
+function continuarAposAvisoAdmin(){
+  if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();
+}
+
+async function mostrarAvisoAdmin(){
+  if(!avisoAdminApiConfigurada())return false;
+  try{
+    const resposta=await fetch(window.ANOTAAI_NOTICE_API,{method:'GET',cache:'no-store'});
+    let json;
+    try{json=await resposta.json();}catch{return false;}
+    const aviso=json?.notice;
+    if(!resposta.ok||!json?.ok||!aviso?.id||!aviso?.message)return false;
+    const chave='anotaaiAvisoAdminVisto';
+    if(localStorage.getItem(chave)===String(aviso.id))return false;
+    localStorage.setItem(chave,String(aviso.id));
+    const modal=document.createElement('div');
+    modal.id='modalAvisoAdmin';
+    modal.className='modal-backdrop';
+    const titulo=escapeHtml(String(aviso.title||'Aviso'));
+    const mensagem=escapeHtml(String(aviso.message||'')).replace(/\n/g,'<br>');
+    modal.innerHTML=`<div class="modal-box"><div class="toolbar"><div><h3>📢 ${titulo}</h3></div><button class="modal-close" onclick="fecharModal('modalAvisoAdmin');setTimeout(continuarAposAvisoAdmin,250)">×</button></div><div class="update-list"><p>${mensagem}</p></div><button class="btn" onclick="fecharModal('modalAvisoAdmin');setTimeout(continuarAposAvisoAdmin,250)">Entendi</button></div>`;
+    document.body.appendChild(modal);
+    return true;
+  }catch{
+    return false;
+  }
+}
+
 function mostrarAvisoCorrecaoSincronizacao() {
   const chaveAviso = 'anotaaiAvisoAtualizacoesV4';
   if (localStorage.getItem(chaveAviso) === '1') return false;
@@ -2333,7 +2366,7 @@ function mostrarAvisoCorrecaoSincronizacao() {
   return true;
 }
 
-async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(()=>{if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();},450);}
+async function abrirAppAposLicenca(){if(localStorage.getItem('anotaaiAutoSync')!=='false'&&localStorage.getItem('anotaaiBackupCode')){const sincronizou=await sincronizarAgora(true);if(sincronizou)marcarHorariosVencidosExecutados();}iniciarAgendamentoBackups();home();setTimeout(async()=>{if(await mostrarAvisoAdmin())return;if(!mostrarAvisoCorrecaoSincronizacao())mostrarSincronizacaoDiaria();},450);}
 async function ativarLicenca() { const input=document.getElementById('licenseInput'),code=input.value.trim().toUpperCase();if(!code)return alert('Informe a chave de licença.');try{input.disabled=true;const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCode',code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){telaAtivacao(erro.message);} }
 async function iniciarComLicenca() { if(window.ANOTAAI_LICENSE_REQUIRED!==true)return abrirAppAposLicenca();const code=localStorage.getItem('anotaaiLicenseCode');if(!code)return telaAtivacao();try{const info=await consultarLicenca(code);localStorage.setItem('anotaaiLicenseCheckedAt',String(Date.now()));localStorage.setItem('anotaaiLicenseInfo',JSON.stringify(info));await abrirAppAposLicenca();}catch(erro){const ultima=Number(localStorage.getItem('anotaaiLicenseCheckedAt')||0);if(!erro.recusa&&ultima&&Date.now()-ultima<=TOLERANCIA_OFFLINE_MS)return abrirAppAposLicenca();telaAtivacao(erro.message);} }
 function trocarLicenca(){if(!confirm('Deseja remover a licença deste aparelho e informar outra? Seus dados locais não serão apagados.'))return;localStorage.removeItem('anotaaiLicenseCode');localStorage.removeItem('anotaaiLicenseCheckedAt');localStorage.removeItem('anotaaiLicenseInfo');telaAtivacao();}
