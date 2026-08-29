@@ -88,3 +88,26 @@ html[data-theme="dark"] .status.not-sent{background:#432b1b;color:#ffc18f}
 
 /* ===== Mensagem personalizada de cobrança ===== */
 .custom-charge-message[hidden]{display:none}.custom-charge-message code{background:rgba(127,127,127,.13);padding:2px 5px;border-radius:5px}.custom-charge-message textarea{min-height:145px;resize:vertical}
+
+
+/* Loader de inicialização */
+.app-loader-screen{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;background:#fff;transition:opacity .2s ease,visibility .2s ease}
+.app-loader-screen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.loader {
+  height: 30px;
+  aspect-ratio: 2;
+  background:
+    radial-gradient(farthest-side,#000 15%,#0000 18%)0 0/50% 100%,
+    radial-gradient(50% 100% at 50% 160%,#fff 95%,#0000) 0 0   /50% 50%,
+    radial-gradient(50% 100% at 50% -60%,#fff 95%,#0000) 0 100%/50% 50%;
+  background-repeat: repeat-x;
+  -webkit-mask: radial-gradient(50% 100%,#000 95%,#0000) 0 100%/50% 0% repeat-x;
+  animation: l3 1s infinite alternate ease-in;
+}
+@keyframes l3 {
+  0%,
+  70% {-webkit-mask-size:50% 100%}
+  85% {-webkit-mask-size:50% 0}
+  100% {-webkit-mask-size:50% 100%}
+}
+html[data-theme="dark"] .app-loader-screen{background:#0f141b}
