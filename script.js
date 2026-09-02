@@ -73,7 +73,31 @@ function clientesParaCobrarHoje() {
 // Formata o agendamento para aparecer de forma amigável na interface.
 function formatarCobranca(c) {
   if (!c.dataHoraCobranca) return 'Sem cobrança agendada';
-  return new Date(c.dataHoraCobranca).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const proxima = new Date(c.dataHoraCobranca).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  if (c.cobrancaRecorrente === 'mensal') return `todo dia ${Number(c.diaCobrancaMensal || 1)} às ${c.horaCobrancaMensal || '09:00'} · próxima ${proxima}`;
+  return proxima;
+}
+
+function dataHoraLocal(data) {
+  const pad = valor => String(valor).padStart(2, '0');
+  return `${data.getFullYear()}-${pad(data.getMonth()+1)}-${pad(data.getDate())}T${pad(data.getHours())}:${pad(data.getMinutes())}`;
+}
+
+function proximaCobrancaMensal(dia=1, hora='09:00', referencia=new Date()) {
+  const diaValido = Math.min(31, Math.max(1, Number(dia) || 1));
+  const [horas, minutos] = String(hora || '09:00').split(':').map(Number);
+  let ano = referencia.getFullYear(), mes = referencia.getMonth();
+  const montar = () => {
+    const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+    return new Date(ano, mes, Math.min(diaValido, ultimoDia), Number.isFinite(horas)?horas:9, Number.isFinite(minutos)?minutos:0, 0, 0);
+  };
+  let proxima = montar();
+  if (proxima <= referencia) {
+    mes++;
+    if (mes > 11) { mes = 0; ano++; }
+    proxima = montar();
+  }
+  return dataHoraLocal(proxima);
 }
 
 function produtosEstoqueBaixo() {
@@ -243,7 +267,24 @@ function formCliente(id, nomeInicial = '') {
         Ativar lembrete de cobrança
       </label>
 
-      <div class="field">
+      <label class="checkline">
+        <input id="crecorrente" type="checkbox" ${c.cobrancaRecorrente === 'mensal' ? 'checked' : ''} onchange="atualizarCamposCobranca()">
+        Repetir a cobrança todo mês
+      </label>
+
+      <div id="camposCobrancaMensal" ${c.cobrancaRecorrente === 'mensal' ? '' : 'hidden'}>
+        <div class="field">
+          <label>Dia do mês</label>
+          <input id="cdiamensal" type="number" min="1" max="31" value="${Number(c.diaCobrancaMensal || 1)}">
+        </div>
+        <div class="field">
+          <label>Horário</label>
+          <input id="choramensal" type="time" value="${escapeHtml(c.horaCobrancaMensal || '09:00')}">
+        </div>
+        <p class="muted">Nos meses mais curtos, o dia 29, 30 ou 31 será ajustado para o último dia do mês.</p>
+      </div>
+
+      <div id="campoCobrancaUnica" class="field" ${c.cobrancaRecorrente === 'mensal' ? 'hidden' : ''}>
         <label>Data e hora da cobrança</label>
         <input id="cdatahora" type="datetime-local" value="${c.dataHoraCobranca || ''}">
       </div>
@@ -256,9 +297,18 @@ function formCliente(id, nomeInicial = '') {
   );
 }
 
+function atualizarCamposCobranca() {
+  const mensal = document.getElementById('crecorrente')?.checked;
+  document.getElementById('camposCobrancaMensal')?.toggleAttribute('hidden', !mensal);
+  document.getElementById('campoCobrancaUnica')?.toggleAttribute('hidden', mensal);
+}
+
 function salvarCliente(id) {
     const nome = cnome.value.trim();
-    const dataHora = cdatahora.value;
+    const recorrenteMensal = crecorrente.checked;
+    const diaMensal = Math.min(31, Math.max(1, Number(cdiamensal.value) || 1));
+    const horaMensal = choramensal.value || '09:00';
+    const dataHora = recorrenteMensal ? proximaCobrancaMensal(diaMensal, horaMensal) : cdatahora.value;
     const atualizadoEm = new Date().toISOString();
 
     if (!nome) {
@@ -304,6 +354,9 @@ function salvarCliente(id) {
         observacao: cobs.value.trim(),
         cobrancaAtiva: ccobranca.checked,
         dataHoraCobranca: ccobranca.checked ? dataHora : null,
+        cobrancaRecorrente: ccobranca.checked && recorrenteMensal ? 'mensal' : null,
+        diaCobrancaMensal: recorrenteMensal ? diaMensal : null,
+        horaCobrancaMensal: recorrenteMensal ? horaMensal : null,
         atualizadoEm
     };
 
@@ -372,14 +425,19 @@ function registrarMensagemEnviada(id) {
   );
 
   if (!jaRegistrada) {
+    const agora = new Date();
     db.cobrancas.push({
       id: Date.now(),
       clienteId: id,
-      data: new Date().toISOString(),
+      data: agora.toISOString(),
       valor: saldoCliente(id),
       vencimento: c.dataHoraCobranca || null,
-      atualizadoEm: new Date().toISOString()
+      atualizadoEm: agora.toISOString()
     });
+    if (c.cobrancaRecorrente === 'mensal' && vencimento && !Number.isNaN(vencimento.getTime()) && vencimento <= agora) {
+      c.dataHoraCobranca = proximaCobrancaMensal(c.diaCobrancaMensal, c.horaCobrancaMensal, agora);
+      c.atualizadoEm = agora.toISOString();
+    }
     save();
   }
 }
@@ -1826,7 +1884,7 @@ function gerarCodigoBackup() {
 function pacoteBackup() {
   return {
     app: 'AnotaAí',
-    versao: 26,
+    versao: 27,
     criadoEm: new Date().toISOString(),
     dados: JSON.parse(JSON.stringify(db))
   };
@@ -2348,7 +2406,7 @@ async function mostrarAvisoAdmin(){
 }
 
 function mostrarAvisoCorrecaoSincronizacao() {
-  const chaveAviso = 'anotaaiAvisoAtualizacoesV4';
+  const chaveAviso = 'anotaaiAvisoAtualizacoesV5';
   if (localStorage.getItem(chaveAviso) === '1') return false;
 
   // Marca como visto ao exibir para garantir que este aviso apareça uma única vez.
@@ -2361,6 +2419,7 @@ function mostrarAvisoCorrecaoSincronizacao() {
   <p>✅ Variáveis disponíveis para PIX, recebedor e nome da loja</p>
   <p>✅ Barra de pesquisa na Aba vendas</p>
   <p>✅ Saldo devedor agora aparece na aba clientes</p>
+  <p>✅ Cobranças recorrentes mensais com avanço automático</p>
   </div><div class="update-footer">As novas funções já estão disponíveis nesta versão.</div><button class="btn" onclick="fecharModal('modalAvisoAtualizacaoSync');setTimeout(mostrarSincronizacaoDiaria,250)">Entendi</button></div>`;
   document.body.appendChild(modal);
   return true;
