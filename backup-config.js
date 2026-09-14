@@ -10,3 +10,6 @@ window.ANOTAAI_LICENSE_REQUIRED = true;
 
 // Avisos publicados pelo painel administrativo.
 window.ANOTAAI_NOTICE_API = 'https://anotaai.site/smilehost-api/notice.php';
+
+//API Resoponsavel para interpretar a IA
+window.ANOTAAI_AI_API = 'https://anotaai.site/smilehost-api/ai.php';

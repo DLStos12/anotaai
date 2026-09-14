@@ -1,7 +1,27 @@
 // Service Worker simples: mantém os arquivos principais disponíveis offline.
 // Ao mudar a versão do CACHE, o navegador baixa os arquivos novos do AnotaAí.
-const CACHE = 'anotaai-v30';
-const FILES = ['./', './index.html', './style.css', './backup-config.js', './script.js', './logo.png', './icon-192.png', './icon-512.png', './manifest.json'];
+const CACHE = 'anotaai-v31';
+const FILES = [
+  './',
+  './index.html',
+  './style.css',
+  './backup-config.js',
+  './js/core.js',
+  './js/interface.js',
+  './js/clientes.js',
+  './js/produtos.js',
+  './js/vendas.js',
+  './js/assistente-ia.js',
+  './js/relatorios.js',
+  './js/configuracoes.js',
+  './js/pwa.js',
+  './js/licenca.js',
+  './teo-avatar.png',
+  './logo.png',
+  './icon-192.png',
+  './icon-512.png',
+  './manifest.json'
+];
 
 self.addEventListener('install', event => {
   self.skipWaiting();

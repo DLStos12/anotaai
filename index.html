@@ -17,6 +17,16 @@
   <div id="appLoader" class="app-loader-screen"><div class="loader" aria-label="Carregando"></div></div>
   <div id="app"></div>
   <script src="backup-config.js"></script>
-  <script src="script.js"></script>
+  <!-- A ordem abaixo é importante porque os arquivos compartilham funções globais. -->
+  <script src="js/core.js"></script>
+  <script src="js/interface.js"></script>
+  <script src="js/clientes.js"></script>
+  <script src="js/produtos.js"></script>
+  <script src="js/vendas.js"></script>
+  <script src="js/assistente-ia.js"></script>
+  <script src="js/relatorios.js"></script>
+  <script src="js/configuracoes.js"></script>
+  <script src="js/pwa.js"></script>
+  <script src="js/licenca.js"></script>
 </body>
 </html>
