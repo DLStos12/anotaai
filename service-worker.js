@@ -1,6 +1,6 @@
 // Service Worker simples: mantém os arquivos principais disponíveis offline.
 // Ao mudar a versão do CACHE, o navegador baixa os arquivos novos do AnotaAí.
-const CACHE = 'anotaai-v31';
+const CACHE = 'anotaai-v32';
 const FILES = [
   './',
   './index.html',

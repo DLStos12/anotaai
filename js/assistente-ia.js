@@ -69,10 +69,32 @@ async function enviarComandoIA(textoOpcao='') {
 // atual e mantém a venda, em vez de bloquear todo o plano.
 function normalizarPlanoTeo(plano) {
   if(!Array.isArray(plano.acoes))return plano;
+  corrigirClientesAusentesTeo(plano);
   plano.acoes.forEach(a=>{if(a.tipo==='cadastrar_produtos')a.produtos=(a.produtos||[]).filter(p=>!buscarProdutoIA(p.nome));});
   plano.acoes.forEach(a=>{if(a.tipo==='cadastrar_clientes')a.clientes=(a.clientes||[]).filter(c=>!buscarClienteIA(c.nome));});
   plano.acoes=plano.acoes.filter(a=>(a.tipo!=='cadastrar_produtos'||a.produtos.length)&&(a.tipo!=='cadastrar_clientes'||a.clientes.length));
+  const nomesCadastrados=new Set(plano.acoes.filter(a=>a.tipo==='cadastrar_clientes').flatMap(a=>a.clientes||[]).map(c=>nomeNormalizadoIA(c.nome)));
+  const clienteAindaAusente=plano.acoes.filter(a=>a.tipo==='registrar_vendas').flatMap(a=>a.vendas||[]).map(v=>String(v.cliente||'').trim()).find(nome=>nome&&!buscarClienteIA(nome)&&!nomesCadastrados.has(nomeNormalizadoIA(nome)));
+  if(clienteAindaAusente){
+    plano.estado='pergunta';
+    plano.mensagem=`O cliente ${clienteAindaAusente} ainda não está cadastrado. Quer que eu o cadastre antes de registrar a venda?`;
+    plano.opcoes=[{label:'Cadastrar cliente',mensagem:`Sim, cadastre o cliente ${clienteAindaAusente} e depois registre a venda.`},{label:'Cancelar venda',mensagem:'Não, cancele essa venda.'}];
+    plano.acoes=[];
+  }
   return plano;
+}
+
+// Corrige com segurança o caso em que a IA entendeu que deve cadastrar o cliente
+// da venda, mas colocou por engano o nome do usuário ou outro nome no cadastro.
+function corrigirClientesAusentesTeo(plano){
+  const vendas=plano.acoes.filter(a=>a.tipo==='registrar_vendas').flatMap(a=>a.vendas||[]);
+  const ausentes=[...new Set(vendas.map(v=>String(v.cliente||'').trim()).filter(nome=>nome&&!buscarClienteIA(nome)).map(nome=>nomeNormalizadoIA(nome)))];
+  const nomesOriginais=new Map(vendas.map(v=>[nomeNormalizadoIA(v.cliente),String(v.cliente).trim()]));
+  const cadastros=plano.acoes.filter(a=>a.tipo==='cadastrar_clientes').flatMap(a=>a.clientes||[]);
+  if(ausentes.length!==1||cadastros.length!==1)return;
+  const cadastro=cadastros[0],nomeCadastro=nomeNormalizadoIA(cadastro.nome);
+  const clienteDoCadastroUsadoEmVenda=vendas.some(v=>nomeNormalizadoIA(v.cliente)===nomeCadastro);
+  if(!clienteDoCadastroUsadoEmVenda&&!buscarClienteIA(cadastro.nome))cadastro.nome=nomesOriginais.get(ausentes[0]);
 }
 
 function mostrarRespostaTeo(plano) {
