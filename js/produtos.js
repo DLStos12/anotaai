@@ -20,6 +20,10 @@ function produtos() {
                             À vista: ${money(p.precoAvista ?? p.precoPrazo ?? p.preco)}
                         </div>
 
+                        <div class="muted">
+                            Custo: ${money(p.precoCusto || 0)}
+                        </div>
+
                         ${p.controlarEstoque
                             ? `<div class="muted">Estoque: ${p.estoque} · mínimo: ${p.estoqueMinimo}</div>`
                             : '<div class="muted">Estoque não controlado</div>'
@@ -47,10 +51,15 @@ function produtos() {
 }
 
 function formProduto(id) {
+    if (!id && db.produtos.length >= limiteProdutosPlano()) {
+        alertaPremium(`O plano ${nomePlano()} permite até ${limiteProdutosPlano()} produtos. Escolha um plano superior para cadastrar mais.`);
+        return;
+    }
     const p = db.produtos.find(x => x.id == id) || {
         nome: '',
         precoPrazo: '',
         precoAvista: '',
+        precoCusto: '',
         controlarEstoque: false,
         estoque: 0,
         estoqueMinimo: 0
@@ -58,6 +67,7 @@ function formProduto(id) {
 
     const precoPrazo = p.precoPrazo ?? p.preco ?? '';
     const precoAvista = p.precoAvista ?? p.precoPrazo ?? p.preco ?? '';
+    const precoCusto = p.precoCusto ?? '';
 
     shell(id ? 'Editar produto' : 'Cadastrar produto', `
         <section class="card">
@@ -87,6 +97,19 @@ function formProduto(id) {
                     min="0"
                     value="${precoAvista}"
                 >
+            </div>
+
+            <div class="field">
+                <label>Valor de custo</label>
+                <input
+                    id="pprecoCusto"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value="${precoCusto}"
+                    placeholder="0,00"
+                >
+                <small class="muted">Usado para calcular o custo dos produtos vendidos no Financeiro.</small>
             </div>
 
             <label class="checkline">
@@ -134,11 +157,17 @@ function formProduto(id) {
 }
 
 function salvarProduto(id) {
+    const editando = Boolean(id);
+    if (!id && db.produtos.length >= limiteProdutosPlano()) {
+        alertaPremium(`Você atingiu o limite de ${limiteProdutosPlano()} produtos do plano ${nomePlano()}. Escolha um plano superior para cadastrar mais.`);
+        return;
+    }
 
     const nome = pnome.value.trim();
 
     const precoPrazo = Number(pprecoPrazo.value);
     const precoAvista = Number(pprecoAvista.value);
+    const precoCusto = Number(pprecoCusto.value || 0);
 
     const controlarEstoque = pcontrola.checked;
 
@@ -150,9 +179,10 @@ function salvarProduto(id) {
     if (
         !nome ||
         precoPrazo < 0 ||
-        precoAvista < 0
+        precoAvista < 0 ||
+        precoCusto < 0
     ) {
-        return alert('Preencha os dados.');
+        return alertaErro('Produto não registrado. Preencha os dados corretamente.');
     }
 
     if (id) {
@@ -163,6 +193,7 @@ function salvarProduto(id) {
             nome,
             precoPrazo,
             precoAvista,
+            precoCusto,
             controlarEstoque,
             estoque,
             estoqueMinimo,
@@ -176,6 +207,7 @@ function salvarProduto(id) {
             nome,
             precoPrazo,
             precoAvista,
+            precoCusto,
             controlarEstoque,
             estoque,
             estoqueMinimo,
@@ -186,6 +218,7 @@ function salvarProduto(id) {
 
     save();
     produtos();
+    alertaSucesso(editando ? '✅ Produto atualizado.' : '✅ Produto criado.');
 }
 
 function excluirProduto(id) {
@@ -206,17 +239,22 @@ function excluirProduto(id) {
             'mas continuará aparecendo no histórico dessas vendas.';
     }
 
-    if (!confirm(mensagem)) return;
+    confirmarAcaoApp({
+        titulo: 'Excluir produto?',
+        mensagem,
+        textoConfirmar: 'Excluir produto',
+        aoConfirmar: () => {
+            // Registra a exclusão para o sistema de sincronização
+            registrarExclusao('produtos', id);
 
-    // Registra a exclusão para o sistema de sincronização
-    registrarExclusao('produtos', id);
+            // Remove somente do cadastro de produtos
+            db.produtos = db.produtos.filter(x => x.id != id);
 
-    // Remove somente do cadastro de produtos
-    db.produtos = db.produtos.filter(x => x.id != id);
-
-    save();
-
-    produtos();
+            save();
+            produtos();
+            alertaSucesso('✅ Produto excluído.');
+        }
+    });
 }
 
 function precoProduto(produto, pagamento) {
@@ -273,4 +311,3 @@ function ajustarEstoque(itens, sinal, motivo) {
 
     });
 }
-

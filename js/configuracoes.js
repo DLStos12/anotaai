@@ -1,4 +1,5 @@
 // ----------------------------- MAIS -------------------------------
+function cardPlanoAtual(){const p=planoAtual();if(p==='pro')return`<section class="card plan-card premium"><div><span class="plan-label">PLANO PRÓ</span><h3>Todos os recursos liberados</h3><p class="muted">Acesso ${escapeHtml(validadePremium())} · tudo ilimitado.</p></div><button class="btn premium-button" onclick="abrirOfertaPremium()">Estender plano</button></section>`;if(p==='basic')return`<section class="card plan-card premium"><div><span class="plan-label">PLANO BÁSICO</span><h3>Seu negócio organizado</h3><p class="muted">Acesso ${escapeHtml(validadePremium())} · 50 clientes, 10 produtos e 5 relatórios/mês.</p></div><button class="btn premium-button" onclick="abrirOfertaPremium()">Estender ou mudar plano</button></section>`;return`<section class="card plan-card"><div><span class="plan-label">PLANO FREE</span><h3>Conheça os planos do AnotaAí</h3><p class="muted">Até 10 clientes, 5 produtos e 1 relatório por mês.</p></div><button class="btn premium-button" onclick="abrirOfertaPremium()">Planos a partir de R$ 10</button></section>`;}
 function mais() {
   const instalado = appEstaInstalado();
   const codigoBackup = localStorage.getItem('anotaaiBackupCode') || '';
@@ -10,6 +11,7 @@ function mais() {
   const agendaBackup = obterAgendaBackup();
   const proximoBackup = descreverProximoBackup();
   shell('Mais opções', `<section class="grid"><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Cadastros e cobranças</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos e estoque</span></button><button class="action purple" onclick="configUsuario()"><b>👤 Usuário</b><span>Seu nome e dados PIX</span></button></section>
+  ${cardPlanoAtual()}
   <section class="card app-install-card">
     <div class="app-install-info"><div class="app-install-icon">📱</div><div><h3>Aplicativo AnotaAí</h3><p class="muted" id="installAppStatus">${instalado ? 'O AnotaAí já está instalado neste aparelho.' : 'Instale para abrir pela tela inicial e usar como aplicativo.'}</p></div></div>
     <button id="installAppBtn" class="btn install-btn ${instalado ? 'installed' : ''}" onclick="instalarApp()" ${instalado ? 'disabled' : ''}>${instalado ? '✓ Aplicativo instalado' : '⬇ Instalar AnotaAí'}</button>
@@ -42,7 +44,7 @@ function mais() {
 // -------------------------- BACKUP -------------------------------
 // O GitHub Pages continua hospedando o aplicativo. A URL abaixo aponta para
 // a pequena API PHP instalada separadamente na SmileHost.
-const BACKUP_LISTAS = ['clientes','produtos','vendas','pagamentos','movimentacoesEstoque','cobrancas'];
+const BACKUP_LISTAS = ['clientes','produtos','vendas','pagamentos','gastos','movimentacoesEstoque','cobrancas'];
 let timerBackupOnline = null;
 let timerAgendaBackup = null;
 let backupAgendadoEmAndamento = false;
@@ -428,4 +430,3 @@ async function limparDados(tipo) {
   }
   save();fecharModal('modalLimpeza');location.reload();
 }
-

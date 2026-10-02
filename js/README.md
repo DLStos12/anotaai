@@ -11,6 +11,7 @@ mantida.
 | `clientes.js` | Clientes, pagamentos, cobranças, WhatsApp e fila de cobrança |
 | `produtos.js` | Cadastro de produtos, preços, estoque, reposição e exclusão |
 | `vendas.js` | Nova venda, produtos personalizados, cálculo, salvamento e edição de vendas |
+| `financeiro.js` | Painel mensal de vendas, recebimentos, gastos e resultado |
 | `assistente-ia.js` | Chat do Téo, histórico da conversa, perguntas, prévias e execução de múltiplas ações |
 | `relatorios.js` | Filtros, geração de relatório e exportação em PDF |
 | `configuracoes.js` | Tela Mais, backup, sincronização, agenda, usuário e limpeza de dados |

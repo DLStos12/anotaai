@@ -5,6 +5,7 @@ window.ultimaAcaoIA = null;
 window.teoArquivos = window.teoArquivos || [];
 
 function abrirAssistenteIA() {
+  if(!exigirPremium('O Téo'))return;
   shell('Conversa com o Téo', `
     <section class="teo-chat">
       <header class="teo-chat-header">
@@ -69,32 +70,10 @@ async function enviarComandoIA(textoOpcao='') {
 // atual e mantém a venda, em vez de bloquear todo o plano.
 function normalizarPlanoTeo(plano) {
   if(!Array.isArray(plano.acoes))return plano;
-  corrigirClientesAusentesTeo(plano);
   plano.acoes.forEach(a=>{if(a.tipo==='cadastrar_produtos')a.produtos=(a.produtos||[]).filter(p=>!buscarProdutoIA(p.nome));});
   plano.acoes.forEach(a=>{if(a.tipo==='cadastrar_clientes')a.clientes=(a.clientes||[]).filter(c=>!buscarClienteIA(c.nome));});
   plano.acoes=plano.acoes.filter(a=>(a.tipo!=='cadastrar_produtos'||a.produtos.length)&&(a.tipo!=='cadastrar_clientes'||a.clientes.length));
-  const nomesCadastrados=new Set(plano.acoes.filter(a=>a.tipo==='cadastrar_clientes').flatMap(a=>a.clientes||[]).map(c=>nomeNormalizadoIA(c.nome)));
-  const clienteAindaAusente=plano.acoes.filter(a=>a.tipo==='registrar_vendas').flatMap(a=>a.vendas||[]).map(v=>String(v.cliente||'').trim()).find(nome=>nome&&!buscarClienteIA(nome)&&!nomesCadastrados.has(nomeNormalizadoIA(nome)));
-  if(clienteAindaAusente){
-    plano.estado='pergunta';
-    plano.mensagem=`O cliente ${clienteAindaAusente} ainda não está cadastrado. Quer que eu o cadastre antes de registrar a venda?`;
-    plano.opcoes=[{label:'Cadastrar cliente',mensagem:`Sim, cadastre o cliente ${clienteAindaAusente} e depois registre a venda.`},{label:'Cancelar venda',mensagem:'Não, cancele essa venda.'}];
-    plano.acoes=[];
-  }
   return plano;
-}
-
-// Corrige com segurança o caso em que a IA entendeu que deve cadastrar o cliente
-// da venda, mas colocou por engano o nome do usuário ou outro nome no cadastro.
-function corrigirClientesAusentesTeo(plano){
-  const vendas=plano.acoes.filter(a=>a.tipo==='registrar_vendas').flatMap(a=>a.vendas||[]);
-  const ausentes=[...new Set(vendas.map(v=>String(v.cliente||'').trim()).filter(nome=>nome&&!buscarClienteIA(nome)).map(nome=>nomeNormalizadoIA(nome)))];
-  const nomesOriginais=new Map(vendas.map(v=>[nomeNormalizadoIA(v.cliente),String(v.cliente).trim()]));
-  const cadastros=plano.acoes.filter(a=>a.tipo==='cadastrar_clientes').flatMap(a=>a.clientes||[]);
-  if(ausentes.length!==1||cadastros.length!==1)return;
-  const cadastro=cadastros[0],nomeCadastro=nomeNormalizadoIA(cadastro.nome);
-  const clienteDoCadastroUsadoEmVenda=vendas.some(v=>nomeNormalizadoIA(v.cliente)===nomeCadastro);
-  if(!clienteDoCadastroUsadoEmVenda&&!buscarClienteIA(cadastro.nome))cadastro.nome=nomesOriginais.get(ausentes[0]);
 }
 
 function mostrarRespostaTeo(plano) {
@@ -155,10 +134,10 @@ function executarCadastroClientesTeo(a){
   const agora=new Date().toISOString(),base=Date.now();
   (a.clientes||[]).forEach((c,i)=>{const mensal=c.cobrancaTipo==='mensal',unica=c.cobrancaTipo==='unica',ativa=mensal||unica;db.clientes.push({id:base+i,nome:String(c.nome).trim(),telefone:String(c.telefone||'').trim(),observacao:String(c.observacao||'').trim(),cobrancaAtiva:ativa,dataHoraCobranca:mensal?proximaCobrancaMensal(Number(c.diaCobrancaMensal),c.horaCobrancaMensal):unica?c.dataHoraCobranca:null,cobrancaRecorrente:mensal?'mensal':null,diaCobrancaMensal:mensal?Number(c.diaCobrancaMensal):null,horaCobrancaMensal:mensal?c.horaCobrancaMensal:null,atualizadoEm:agora});});
 }
-function executarCadastroProdutosTeo(a){const agora=new Date().toISOString(),base=Date.now();(a.produtos||[]).forEach((p,i)=>db.produtos.push({id:base+i,nome:String(p.nome).trim(),precoPrazo:Number(p.precoPrazo),precoAvista:Number(p.precoAvista),controlarEstoque:Boolean(p.controlarEstoque),estoque:Math.max(0,Number(p.estoque||0)),estoqueMinimo:Math.max(0,Number(p.estoqueMinimo||0)),atualizadoEm:agora}));}
+function executarCadastroProdutosTeo(a){const agora=new Date().toISOString(),base=Date.now();(a.produtos||[]).forEach((p,i)=>db.produtos.push({id:base+i,nome:String(p.nome).trim(),precoPrazo:Number(p.precoPrazo),precoAvista:Number(p.precoAvista),precoCusto:Math.max(0,Number(p.precoCusto||0)),controlarEstoque:Boolean(p.controlarEstoque),estoque:Math.max(0,Number(p.estoque||0)),estoqueMinimo:Math.max(0,Number(p.estoqueMinimo||0)),atualizadoEm:agora}));}
 function executarVendasTeo(a){
   const consumo=new Map(),preparadas=[],agora=new Date().toISOString(),base=Date.now()+100;
-  (a.vendas||[]).forEach((v,idx)=>{const cli=buscarClienteIA(v.cliente),pagamento=v.pagamento==='avista'?'avista':'prazo';let total=0;const itens=(v.itens||[]).map(i=>{const q=Number(i.quantidade);if(i.personalizado){const preco=Number(i.preco);total+=preco*q;return{produtoId:null,personalizado:true,nome:String(i.produto),quantidade:q,preco,subtotal:preco*q};}const p=buscarProdutoIA(i.produto);if(p.controlarEstoque){const usado=(consumo.get(p.id)||0)+q;if(usado>Number(p.estoque||0))throw new Error(`Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`);consumo.set(p.id,usado);}const preco=precoProduto(p,pagamento);total+=preco*q;return{produtoId:p.id,personalizado:false,nome:p.nome,quantidade:q,preco,subtotal:preco*q};});preparadas.push({id:base+idx*10,clienteId:cli.id,data:agora,observacao:'Registrada pelo Téo',itens,total,pagamento,atualizadoEm:agora});});
+  (a.vendas||[]).forEach((v,idx)=>{const cli=buscarClienteIA(v.cliente),pagamento=v.pagamento==='avista'?'avista':'prazo';let total=0;const itens=(v.itens||[]).map(i=>{const q=Number(i.quantidade);if(i.personalizado){const preco=Number(i.preco);total+=preco*q;return{produtoId:null,personalizado:true,nome:String(i.produto),quantidade:q,preco,subtotal:preco*q,custoUnitario:0,custoTotal:0};}const p=buscarProdutoIA(i.produto);if(p.controlarEstoque){const usado=(consumo.get(p.id)||0)+q;if(usado>Number(p.estoque||0))throw new Error(`Estoque insuficiente de ${p.nome}. Disponível: ${p.estoque}.`);consumo.set(p.id,usado);}const preco=precoProduto(p,pagamento),custoUnitario=Number(p.precoCusto||0);total+=preco*q;return{produtoId:p.id,personalizado:false,nome:p.nome,quantidade:q,preco,subtotal:preco*q,custoUnitario,custoTotal:custoUnitario*q};});preparadas.push({id:base+idx*10,clienteId:cli.id,data:agora,observacao:'Registrada pelo Téo',itens,total,pagamento,atualizadoEm:agora});});
   preparadas.forEach(v=>{ajustarEstoque(v.itens,-1,'Venda registrada pelo Téo');db.vendas.push(v);if(v.pagamento==='avista')db.pagamentos.push({id:v.id+1,clienteId:v.clienteId,valor:v.total,data:agora,forma:'avista',vendaId:v.id,atualizadoEm:agora});});
 }
 function executarRetiradaEstoqueTeo(a){

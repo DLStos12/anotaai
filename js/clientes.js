@@ -44,10 +44,35 @@ function statusCliente(c) {
     </span>`;
 }
 function clientes() {
-  shell('Clientes', `<div class="toolbar"><h2>Clientes</h2><button class="btn" onclick="formCliente()">+ Novo cliente</button></div>
+  shell('Clientes', `<div class="toolbar"><h2>Clientes</h2><div class="client-toolbar-actions"><button class="btn secondary" onclick="sincronizarContatosCelular()">📱 Importar contatos</button><button class="btn" onclick="formCliente()">+ Novo cliente</button></div></div>
     <section class="card client-search-card"><div class="field client-search-field"><label>Buscar cliente</label><input id="buscaClientes" type="search" placeholder="Digite o nome do cliente..." oninput="filtrarListaClientes()"></div><label class="checkline"><input id="selecionarDevedores" type="checkbox" onchange="selecionarTodosDevedores(this.checked)"> Selecionar todos com saldo em aberto</label></section>
     <div id="bulkBar" class="bulk-bar hidden"><b><span id="bulkCount">0</span> selecionado(s)</b><div><button class="btn whatsapp-btn" onclick="cobrarSelecionados()">💬 Cobrar</button> <button class="btn danger" onclick="excluirSelecionados()">🗑 Excluir</button></div></div>
     <div id="listaClientesCadastro" class="list">${htmlListaClientes(db.clientes)}</div>`, 'mais');
+}
+
+async function sincronizarContatosCelular(){
+  if(!navigator.contacts?.select){
+    alert('A seleção de contatos não está disponível neste navegador. No Android, abra o AnotaAí pelo Google Chrome e tente novamente.');
+    return;
+  }
+  try{
+    const contatos=await navigator.contacts.select(['name','tel'],{multiple:true});
+    if(!contatos?.length)return;
+    const normalizarTelefone=v=>String(v||'').replace(/\D/g,'');
+    const nomesExistentes=new Set(db.clientes.map(c=>c.nome.trim().toLocaleLowerCase('pt-BR')));
+    const telefonesExistentes=new Set(db.clientes.map(c=>normalizarTelefone(c.telefone)).filter(Boolean));
+    const novos=[];
+    contatos.forEach((contato,i)=>{
+      const nome=String(contato.name?.[0]||'').trim();
+      const telefone=normalizarTelefone(contato.tel?.[0]);
+      const nomeKey=nome.toLocaleLowerCase('pt-BR');
+      if(!nome||nomesExistentes.has(nomeKey)||(telefone&&telefonesExistentes.has(telefone)))return;
+      nomesExistentes.add(nomeKey);if(telefone)telefonesExistentes.add(telefone);
+      novos.push({id:Date.now()+i,nome,telefone,observacao:'Importado dos contatos',cobrancaAtiva:false,dataHoraCobranca:null,cobrancaRecorrente:null,diaCobrancaMensal:null,horaCobrancaMensal:null,atualizadoEm:new Date().toISOString()});
+    });
+    if(!novos.length)return alert('Os contatos selecionados já estavam cadastrados.');
+    const vagas=Math.max(0,limiteClientesPlano()-db.clientes.length);if(!vagas)return alertaPremium(`O plano ${nomePlano()} atingiu o limite de clientes.`);const importar=novos.slice(0,vagas);db.clientes.push(...importar);save();alertaSucesso(`✅ ${importar.length} contato(s) importado(s) com sucesso.${importar.length<novos.length?' Alguns contatos não foram importados por causa do limite do plano.':''}`);clientes();
+  }catch(erro){if(erro?.name!=='AbortError')alert('Não foi possível acessar os contatos. Verifique a permissão do navegador.');}
 }
 function htmlListaClientes(lista) {
   return lista.map(c=>`<div class="client-card"><div class="client-head"><label class="client-select"><input class="cliente-check" type="checkbox" value="${c.id}" onchange="atualizarBulk()"></label><div class="client-info"><b>${escapeHtml(c.nome)}</b><div class="client-balance">Saldo devedor: <strong>${money(saldoCliente(c.id))}</strong></div><div class="client-observation">${c.observacao?`📝 ${escapeHtml(c.observacao)}`:'<span class="muted">Sem observação</span>'}</div><div class="muted">${escapeHtml(c.telefone||'Sem telefone')} ${c.cobrancaAtiva?`· cobrança ${formatarCobranca(c)}`:''}</div><div>${statusCliente(c)}</div></div><button class="btn secondary" onclick="formCliente(${c.id})">Editar</button></div><div class="client-actions"><button class="btn payment-btn" onclick="registrarPagamento(${c.id})">💰 Receber valor</button><button class="btn payment-btn" onclick="quitarSaldoCliente(${c.id})" ${saldoCliente(c.id)<=0?'disabled':''}>✅ Quitar saldo</button><button class="btn whatsapp-btn" onclick="enviarMensagem(${c.id})">💬 Enviar mensagem</button><button class="btn danger" onclick="excluirCliente(${c.id})">🗑 Excluir</button></div></div>`).join('') || '<div class="empty">Nenhum cliente encontrado.</div>';
@@ -56,12 +81,13 @@ function filtrarListaClientes() { const termo=document.querySelector('#buscaClie
 function selecionados() { return [...document.querySelectorAll('.cliente-check:checked')].map(x=>Number(x.value)); }
 function atualizarBulk() { const n=selecionados().length, bar=document.querySelector('#bulkBar'); if(!bar)return; bar.classList.toggle('hidden',!n); document.querySelector('#bulkCount').textContent=n; }
 function selecionarTodosDevedores(on) { document.querySelectorAll('.cliente-check').forEach(ch=>ch.checked=on && saldoCliente(Number(ch.value))>0); atualizarBulk(); }
-function cobrarSelecionados() { const ids=selecionados().filter(id=>saldoCliente(id)>0); if(!ids.length)return alert('Selecione clientes com saldo em aberto.'); iniciarFilaCobranca(ids); }
+function cobrarSelecionados() { if(!planoPremium())return exigirPremium('A fila de cobranças');const ids=selecionados().filter(id=>saldoCliente(id)>0); if(!ids.length)return alert('Selecione clientes com saldo em aberto.'); iniciarFilaCobranca(ids); }
 function registrarExclusao(tipo,id){db.exclusoes||=[];db.exclusoes=db.exclusoes.filter(x=>!(x.tipo===tipo&&String(x.id)===String(id)));db.exclusoes.push({tipo,id,excluidoEm:new Date().toISOString()});}
 function excluirSelecionados() { const ids=selecionados(); if(!ids.length)return; if(!confirm(`Excluir ${ids.length} cliente(s)? O histórico financeiro será preservado.`))return; ids.forEach(id=>registrarExclusao('clientes',id)); db.clientes=db.clientes.filter(c=>!ids.includes(c.id)); save(); clientes(); }
 function excluirCliente(id) { const c=db.clientes.find(x=>x.id==id); if(!c)return; if(!confirm(`Tem certeza que deseja excluir o cliente ${c.nome}?\n\nO histórico financeiro será preservado.`))return; registrarExclusao('clientes',id); db.clientes=db.clientes.filter(x=>x.id!=id); save(); clientes(); }
 
 function formCliente(id, nomeInicial = '') {
+  if (!id && db.clientes.length >= limiteClientesPlano()) return alertaPremium(`O plano ${nomePlano()} permite até ${limiteClientesPlano()} clientes. Escolha um plano superior para cadastrar mais.`);
   const c = db.clientes.find(x => x.id == id) || {
     nome: nomeInicial,
     telefone: '',
@@ -128,6 +154,8 @@ function atualizarCamposCobranca() {
 }
 
 function salvarCliente(id) {
+    const editando = Boolean(id);
+    if (!id && db.clientes.length >= limiteClientesPlano()) return alertaPremium(`O plano ${nomePlano()} permite até ${limiteClientesPlano()} clientes. Escolha um plano superior para cadastrar mais.`);
     const nome = cnome.value.trim();
     const recorrenteMensal = crecorrente.checked;
     const diaMensal = Math.min(31, Math.max(1, Number(cdiamensal.value) || 1));
@@ -136,11 +164,11 @@ function salvarCliente(id) {
     const atualizadoEm = new Date().toISOString();
 
     if (!nome) {
-        return alert('Informe o nome.');
+        return alertaErro('Cliente não registrado. Informe o nome.');
     }
 
     if (ccobranca.checked && !dataHora) {
-        return alert('Informe a data e a hora da cobrança.');
+        return alertaErro('Cliente não registrado. Informe a data e a hora da cobrança.');
     }
 
     // Verifica se já existe outro cliente com o mesmo nome
@@ -167,8 +195,8 @@ function salvarCliente(id) {
     });
 
     if (clienteDuplicado) {
-        return alert(
-            `Já existe um cliente cadastrado com o nome "${clienteDuplicado.nome}".`
+        return alertaErro(
+            `Cliente não registrado. Já existe um cliente cadastrado com o nome "${clienteDuplicado.nome}".`
         );
     }
 
@@ -198,6 +226,7 @@ function salvarCliente(id) {
 
     save();
     clientes();
+    alertaSucesso(editando ? '✅ Cliente atualizado.' : '✅ Cliente criado.');
 }
 
 // ------------------------- PAGAMENTOS ------------------------------
@@ -305,11 +334,13 @@ function enviarMensagem(id) {
 }
 let filaCobranca=[], filaIndex=0;
 function iniciarFilaCobrancasPendentes() {
+  if (!planoPremium()) return exigirPremium('A fila de cobranças');
   const ids = clientesParaCobrarHoje().map(c => c.id);
   if (!ids.length) return alert('Nenhuma cobrança pendente para iniciar.');
   iniciarFilaCobranca(ids);
 }
 function iniciarFilaCobranca(ids) {
+  if (!planoPremium()) return exigirPremium('A fila de cobranças');
   filaCobranca = [...new Set((ids || []).map(Number))].filter(id => cliente(id) && saldoCliente(id) > 0);
   filaIndex = 0;
   if (!filaCobranca.length) return alert('Nenhum cliente com saldo em aberto foi encontrado.');

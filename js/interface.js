@@ -47,14 +47,15 @@ function shell(title, content, active='inicio') {
           <button class="${active==='inicio'?'active':''}" onclick="home()"><span>⌂</span><div><b>Início</b><small>Visão geral</small></div></button>
           <button class="${active==='vendas'?'active':''}" onclick="vendas()"><span>🛒</span><div><b>Vendas</b><small>Histórico e nova venda</small></div></button>
           <button class="${active==='relatorios'?'active':''}" onclick="relatorios()"><span>▥</span><div><b>Relatórios</b><small>Vendas e pagamentos</small></div></button>
+          <button class="${active==='financeiro'?'active':''}" onclick="financeiro()"><span>💰</span><div><b>Financeiro</b><small>Ganhos, vendas e gastos</small></div></button>
           <button class="${active==='mais'?'active':''}" onclick="mais()"><span>•••</span><div><b>Mais</b><small>Clientes, produtos e ajustes</small></div></button>
         </nav>
       </aside>
     </div>
 
     <button 
-    class="fab-ai" 
-    onclick="abrirAssistenteIA()" 
+    class="fab-ai ${planoPro()?'':'free-locked'}" 
+    onclick="planoPro()?abrirAssistenteIA():exigirPro('O Téo')" 
     title="Falar com o Téo" 
     aria-label="Abrir o assistente Téo">
       <img src="teo-avatar.png" alt="">
@@ -79,6 +80,7 @@ function home() {
   const cobrancas = clientesParaCobrarHoje();
   const estoque = produtosEstoqueBaixo();
   shell(db.config.usuarioNome ? `Olá, ${escapeHtml(db.config.usuarioNome)}!` : 'Visão geral', `
+    <div class="plan-chip ${planoAtual()}">Plano ${nomePlano()}</div>
     ${cobrancas.length ? `<section class="card alert-card"><div><b>💰 ${cobrancas.length} cliente(s) para cobrar hoje</b><p class="muted">Inicie a fila e envie as cobranças uma por uma pelo WhatsApp.</p></div><button class="btn whatsapp-btn" onclick="iniciarFilaCobrancasPendentes()">💬 Iniciar fila</button></section>` : ''}
     <section class="card"><div class="toolbar"><h2>Resumo geral</h2><span class="muted">${new Date().toLocaleDateString('pt-BR')}</span></div><div class="summary"><div>Total em aberto<strong>${money(totalAberto())}</strong></div><div>Vendas hoje<strong>${money(vendasHoje)}</strong></div><div>Clientes<strong>${db.clientes.length}</strong></div></div></section>
     <section class="grid"><button class="action green" onclick="novaVenda()"><b>🛒 Nova Venda</b><span>Registrar compra de um cliente</span></button><button class="action blue" onclick="clientes()"><b>👥 Clientes</b><span>Clientes, cobranças e pagamentos</span></button><button class="action orange" onclick="produtos()"><b>📦 Produtos</b><span>Produtos, estoque e reposição</span></button><button class="action yellow" onclick="relatorios()"><b>📊 Relatórios</b><span>Consultar vendas por período</span></button></section>
@@ -90,6 +92,7 @@ function home() {
   const assinatura = cobrancas.map(c => c.id + ':' + c.dataHoraCobranca).sort().join('|');
   if (cobrancas.length && localStorage.getItem(key) !== assinatura) { localStorage.setItem(key, assinatura); setTimeout(abrirNotificacoes, 150); }
   if (!cobrancas.length) localStorage.removeItem(key);
+  verificarAvisoVencimentoPremium();
 }
 
 function abrirNotificacoes() {

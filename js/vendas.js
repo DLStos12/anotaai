@@ -70,9 +70,10 @@ function novaVenda() {
 
             <!-- PRODUTO PERSONALIZADO -->
 
-            <div class="custom-product-box">
+            <details class="custom-product-box custom-product-accordion">
 
-                <h3>➕ Produto personalizado</h3>
+                <summary>Adicionar produto personalizado <span aria-hidden="true">⌄</span></summary>
+                <div class="custom-product-content">
 
                 <div class="field">
                     <label>Nome do produto</label>
@@ -120,7 +121,8 @@ function novaVenda() {
                     + Adicionar produto
                 </button>
 
-            </div>
+                </div>
+            </details>
 
 
             <!-- ITENS PERSONALIZADOS DA VENDA -->
@@ -453,6 +455,8 @@ function coletarItensVenda() {
         const subtotal =
             q * preco;
 
+        const custoUnitario = Number(p.precoCusto || 0);
+
 
         itens.push({
             produtoId: p.id,
@@ -460,7 +464,9 @@ function coletarItensVenda() {
             nome: p.nome,
             quantidade: q,
             preco: preco,
-            subtotal: subtotal
+            subtotal: subtotal,
+            custoUnitario,
+            custoTotal: q * custoUnitario
         });
 
 
@@ -503,7 +509,9 @@ function coletarItensVenda() {
             nome: item.nome,
             quantidade: quantidade,
             preco: preco,
-            subtotal: subtotal
+            subtotal: subtotal,
+            custoUnitario: 0,
+            custoTotal: 0
         });
 
 
@@ -522,7 +530,7 @@ function coletarItensVenda() {
 function salvarVenda() {
 
     if (!vcliente.value) {
-        return alert('Selecione o cliente.');
+        return alertaErro('Venda não registrada. Selecione o cliente.');
     }
 
     const {
@@ -532,11 +540,11 @@ function salvarVenda() {
     } = coletarItensVenda();
 
     if (erro) {
-        return alert(erro);
+        return alertaErro(`Venda não registrada. ${erro}`);
     }
 
     if (!itens.length) {
-        return alert('Adicione pelo menos um produto ou produto personalizado.');
+        return alertaErro('Venda não registrada. Adicione pelo menos um produto ou produto personalizado.');
     }
 
     const formaPagamento =
@@ -578,9 +586,8 @@ function salvarVenda() {
     // Limpa os personalizados depois de salvar
     window.produtosPersonalizadosVenda = [];
 
-    alert('Venda registrada!');
-
     vendas();
+    alertaSucesso('✅ Venda registrada.');
 }
 
 function htmlListaVendas(lista) {
@@ -664,8 +671,9 @@ function editarVenda(id) {
                 `;
             }).join('')}
 
-            <div class="custom-product-box">
-                <h3>➕ Produto personalizado</h3>
+            <details class="custom-product-box custom-product-accordion">
+                <summary>Adicionar produto personalizado <span aria-hidden="true">⌄</span></summary>
+                <div class="custom-product-content">
 
                 <div class="field">
                     <label>Nome do produto</label>
@@ -687,7 +695,8 @@ function editarVenda(id) {
                 <button type="button" class="btn secondary" onclick="adicionarProdutoPersonalizado()">
                     + Adicionar produto
                 </button>
-            </div>
+                </div>
+            </details>
 
             <div id="listaProdutosPersonalizados"></div>
 
@@ -744,13 +753,16 @@ function salvarEdicaoVenda(id) {
 
             const preco = precoProduto(p, pagamento);
             const subtotal = q * preco;
+            const custoUnitario = Number(p.precoCusto || 0);
 
             itens.push({
                 produtoId: p.id,
                 nome: p.nome,
                 quantidade: q,
                 preco: preco,
-                subtotal: subtotal
+                subtotal: subtotal,
+                custoUnitario,
+                custoTotal: q * custoUnitario
             });
 
             total += subtotal;
@@ -774,7 +786,9 @@ function salvarEdicaoVenda(id) {
             nome: item.nome,
             quantidade,
             preco,
-            subtotal
+            subtotal,
+            custoUnitario: 0,
+            custoTotal: 0
         });
 
         total += subtotal;
@@ -838,4 +852,3 @@ function salvarEdicaoVenda(id) {
 
     vendas();
 }
-
