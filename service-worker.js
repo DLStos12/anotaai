@@ -1,6 +1,6 @@
 // Service Worker simples: mantém os arquivos principais disponíveis offline.
 // Ao mudar a versão do CACHE, o navegador baixa os arquivos novos do AnotaAí.
-const CACHE = 'anotaai-tres-planos-v10';
+const CACHE = 'anotaai-licenca-v11';
 const FILES = [
   './',
   './index.html',
@@ -39,5 +39,7 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  // APIs e requisições POST devem sempre consultar o servidor.
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
 });
